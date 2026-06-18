@@ -46,10 +46,16 @@ if ! command -v uv &>/dev/null; then
 fi
 log "uv: $(command -v uv)"
 
-# ── Clone deepseek-cursor-proxy ─────────────────────────────────────
+# ── Clone / update deepseek-cursor-proxy ────────────────────────────
 PROXY_DIR="$HOME/tools/deepseek-cursor-proxy"
-if [[ -d "$PROXY_DIR" ]]; then
-    warn "$PROXY_DIR already exists, skipping clone."
+if [[ -d "$PROXY_DIR/.git" ]]; then
+    log "deepseek-cursor-proxy already exists, updating..."
+    git -C "$PROXY_DIR" pull --ff-only && log "Updated successfully" || warn "git pull failed, continuing with existing copy"
+elif [[ -d "$PROXY_DIR" ]]; then
+    warn "$PROXY_DIR exists but is NOT a git repository."
+    warn "Skipping clone to avoid overwriting your data."
+    warn "If you want a fresh clone, remove this directory first:"
+    warn "  rm -rf $PROXY_DIR"
 else
     log "Cloning deepseek-cursor-proxy..."
     mkdir -p "$(dirname "$PROXY_DIR")"

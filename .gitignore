@@ -3,3 +3,8 @@ cloudflared
 *.log
 __pycache__/
 .venv/
+
+# Ignore local backup and temp files
+*.bak
+*.tmp
+.DS_Store
