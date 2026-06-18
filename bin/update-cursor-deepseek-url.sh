@@ -10,6 +10,7 @@ CURSOR_DB="${HOME}/.config/Cursor/User/globalStorage/state.vscdb"
 BACKUP_DIR="${HOME}/Backups/cursor-state-auto"
 PENDING_BASE_URL_FILE="${CACHE_DIR}/pending-base-url.txt"
 CURRENT_BASE_URL_FILE="${CACHE_DIR}/current-base-url.txt"
+STALE_BASE_URL_FILE="${CACHE_DIR}/stale-base-url.txt"
 ACTIVE_KEY="src.vs.platform.reactivestorage.browser.reactiveStorageServiceImpl.persistentStorage.applicationUser"
 DRY_RUN=false
 WAIT_MAX_SEC=120
@@ -71,6 +72,66 @@ maybe_notify_pending() {
     fi
 }
 
+base_url_is_reachable() {
+    local base_url="$1"
+    local root_url="${base_url%/v1}"
+    root_url="${root_url%/}"
+    curl -fsS --max-time 10 "${root_url}/healthz" >/dev/null 2>&1 \
+        || curl -fsS --max-time 10 "${base_url}/healthz" >/dev/null 2>&1 \
+        || return 1
+    curl -fsS --max-time 10 "${base_url}/models" >/dev/null 2>&1 \
+        || curl -fsS --max-time 10 "${root_url}/v1/models" >/dev/null 2>&1
+}
+
+invalidate_stale_current_base_url() {
+    local current_url=""
+    if [[ ! -f "$CURRENT_BASE_URL_FILE" ]]; then
+        return 0
+    fi
+
+    current_url="$(tr -d '\r\n' < "$CURRENT_BASE_URL_FILE")"
+    if [[ -z "$current_url" ]]; then
+        rm -f "$CURRENT_BASE_URL_FILE"
+        return 0
+    fi
+
+    if base_url_is_reachable "$current_url"; then
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_dry "Would move stale current-base-url to stale-base-url.txt: $current_url"
+        return 0
+    fi
+
+    printf '%s\n' "$current_url" > "$STALE_BASE_URL_FILE"
+    rm -f "$CURRENT_BASE_URL_FILE"
+    log_warn "Existing current-base-url is stale; moved to stale-base-url.txt"
+}
+
+wait_for_cloudflared_log() {
+    local wait_max_sec=60
+    local wait_interval=2
+    local elapsed=0
+
+    if [[ -f "$CLOUDFLARED_LOG" ]]; then
+        return 0
+    fi
+
+    log_info "Cloudflared log not yet available, waiting up to ${wait_max_sec}s..."
+    while [[ $elapsed -lt $wait_max_sec ]]; do
+        sleep "$wait_interval"
+        elapsed=$((elapsed + wait_interval))
+        if [[ -f "$CLOUDFLARED_LOG" ]]; then
+            log_info "Cloudflared log appeared after ${elapsed}s."
+            return 0
+        fi
+    done
+
+    log_error "Cloudflared log not found after ${wait_max_sec}s: $CLOUDFLARED_LOG"
+    return 1
+}
+
 # Prefer the newest reachable URL from cloudflared logs (never a stale entry).
 find_reachable_root_url() {
     local -a candidates=()
@@ -92,8 +153,7 @@ find_reachable_root_url() {
     return 1
 }
 
-if [[ ! -f "$CLOUDFLARED_LOG" ]]; then
-    log_error "Cloudflared log not found: $CLOUDFLARED_LOG"
+if ! wait_for_cloudflared_log; then
     exit 1
 fi
 
@@ -118,6 +178,7 @@ done
 if [[ -z "$NEW_ROOT_URL" ]]; then
     log_error "No reachable tunnel URL found within ${WAIT_MAX_SEC}s."
     log_error "Neither /healthz nor /v1/models was reachable. No DB change."
+    invalidate_stale_current_base_url
     exit 1
 fi
 
@@ -143,7 +204,7 @@ log_info "New openAIBaseUrl:      $NEW_BASE_URL"
 
 if [[ "$OLD_BASE_URL" == "$NEW_BASE_URL" ]]; then
     log_info "openAIBaseUrl is already up to date. No change needed."
-    if ! $DRY_RUN; then
+    if [[ "$DRY_RUN" != true ]]; then
         save_current_base_url "$NEW_BASE_URL"
         clear_pending_base_url
     fi
@@ -152,7 +213,7 @@ fi
 
 log_info "Checking if Cursor is running..."
 if cursor_is_running; then
-    if $DRY_RUN; then
+    if [[ "$DRY_RUN" == true ]]; then
         log_dry "Cursor is running; would save pending URL and exit ${EXIT_TEMPFAIL}."
         log_dry "Pending URL: $NEW_BASE_URL"
         exit 0
@@ -166,7 +227,7 @@ if cursor_is_running; then
 fi
 log_info "Cursor is not running."
 
-if $DRY_RUN; then
+if [[ "$DRY_RUN" == true ]]; then
     log_dry "Would patch key: $ACTIVE_KEY"
     log_dry "From: $OLD_BASE_URL"
     log_dry "To:   $NEW_BASE_URL"

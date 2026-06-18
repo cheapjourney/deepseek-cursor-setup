@@ -66,19 +66,21 @@ The base URL is **not** `http://localhost:9000/v1` — Cursor must connect throu
 
 ### Finding Your Base URL
 
-The URL is automatically updated by the timer after reboot. You can find it in:
+The URL is automatically updated by the timer after reboot. Tunnel URL state files:
+
+| File | Meaning |
+|------|---------|
+| `current-base-url.txt` | Verified reachable tunnel URL (includes `/v1`). Only present after a successful reachability check. |
+| `pending-base-url.txt` | New URL detected, but Cursor is running — DB update is waiting. Close Cursor and let the timer retry. |
+| `stale-base-url.txt` | Previous URL was invalidated (cloudflared restart or reachability failure). Do not use this URL. |
 
 ```bash
 cat ~/.cache/deepseek-cursor-proxy/current-base-url.txt
-```
-
-If Cursor was open when the tunnel URL was detected, a pending URL is saved instead:
-
-```bash
 cat ~/.cache/deepseek-cursor-proxy/pending-base-url.txt
+cat ~/.cache/deepseek-cursor-proxy/stale-base-url.txt
 ```
 
-Close Cursor so the timer can apply the URL on its next retry (every ~90 seconds).
+If `current-base-url.txt` is missing, wait for the updater timer or inspect the cloudflared log for the latest tunnel URL.
 
 ## How the Cloudflare Tunnel Updater Works
 
@@ -87,10 +89,12 @@ Close Cursor so the timer can apply the URL on its next retry (every ~90 seconds
 3. Each time the timer fires, `update-cursor-deepseek-url.sh`:
     - Scans the cloudflared log for the **newest reachable** `trycloudflare.com` URL (validates both `/healthz` and `/v1/models` are reachable).
     - Normalizes it to `https://<host>.trycloudflare.com/v1`.
+    - If no reachable URL is found, moves a stale `current-base-url.txt` to `stale-base-url.txt` (no DB change).
     - Checks if Cursor is running:
         - **Cursor closed**: Patches `state.vscdb`, writes `current-base-url.txt`, removes pending file. Creates a backup in `~/Backups/cursor-state-auto/`.
         - **Cursor open**: Writes `pending-base-url.txt`, exits with code `75` so systemd retries.
-4. The timer's retry loop ensures the URL is eventually applied once Cursor is closed.
+4. When `cloudflared-deepseek-quick.service` restarts, it clears `current-base-url.txt` and `pending-base-url.txt` so stale URLs are not reused.
+5. The timer's retry loop ensures the URL is eventually applied once Cursor is closed.
 
 ## Reboot Behavior
 
@@ -114,8 +118,9 @@ After a reboot:
 | `~/.config/systemd/user/update-cursor-deepseek-url.timer` | URL updater timer (90s interval) |
 | `~/.deepseek-cursor-proxy/config.yaml` | Proxy configuration |
 | `~/.cache/deepseek-cursor-proxy/cloudflared.log` | Tunnel logs |
-| `~/.cache/deepseek-cursor-proxy/current-base-url.txt` | Active tunnel base URL |
-| `~/.cache/deepseek-cursor-proxy/pending-base-url.txt` | Pending URL (when Cursor is open) |
+| `~/.cache/deepseek-cursor-proxy/current-base-url.txt` | Verified reachable tunnel base URL (includes `/v1`) |
+| `~/.cache/deepseek-cursor-proxy/pending-base-url.txt` | Pending URL (Cursor open, DB update waiting) |
+| `~/.cache/deepseek-cursor-proxy/stale-base-url.txt` | Invalidated old tunnel URL after restart or failure |
 | `~/Backups/cursor-state-auto/` | Cursor DB backups before patching |
 
 ## Verification
@@ -167,9 +172,27 @@ This stops and disables all services, removes systemd unit files and the helper 
 
 ## Troubleshooting
 
-### Cloudflare 1033 Error (Direct IP Access)
+### Cloudflare 1033 Error
 
-If you see a Cloudflare error page when accessing the tunnel URL, Quick Tunnel DNS may not be fully propagated yet. Wait 30–60 seconds and try again.
+Cloudflare error 1033 means the Quick Tunnel URL is gone or not yet reachable (common after reboot or `cloudflared` restart).
+
+1. Check the latest tunnel URL from cloudflared logs:
+   ```bash
+   grep -oE 'https://[-a-z0-9]+\.trycloudflare\.com' ~/.cache/deepseek-cursor-proxy/cloudflared.log | tail -1
+   ```
+2. Check tunnel URL state files:
+   ```bash
+   echo current:; cat ~/.cache/deepseek-cursor-proxy/current-base-url.txt 2>/dev/null || echo "no current"
+   echo pending:; cat ~/.cache/deepseek-cursor-proxy/pending-base-url.txt 2>/dev/null || echo "no pending"
+   echo stale:; cat ~/.cache/deepseek-cursor-proxy/stale-base-url.txt 2>/dev/null || echo "no stale"
+   ```
+3. Close Cursor and let the updater timer retry (every ~90 seconds), or trigger manually:
+   ```bash
+   systemctl --user start update-cursor-deepseek-url.service
+   ```
+4. If `current-base-url.txt` is missing, wait for the updater or inspect cloudflared logs — do not reuse a URL from `stale-base-url.txt`.
+
+If DNS is still propagating, wait 30–60 seconds and try again.
 
 ### Quick Tunnel DNS Not Ready
 

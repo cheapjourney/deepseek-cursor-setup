@@ -108,6 +108,18 @@ systemctl --user enable --now update-cursor-deepseek-url.timer
 log "Services installed and enabled"
 
 # ── Install update script ───────────────────────────────────────────
+for script in \
+    "$SETUP_DIR/install.sh" \
+    "$SETUP_DIR/bootstrap.sh" \
+    "$SETUP_DIR/uninstall.sh" \
+    "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh"
+do
+    if ! bash -n "$script"; then
+        err "Shell syntax check failed: $script"
+        exit 1
+    fi
+done
+
 UPDATE_BIN="$HOME/.local/bin/update-cursor-deepseek-url"
 cp "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" "$UPDATE_BIN"
 chmod +x "$UPDATE_BIN"
