@@ -6,7 +6,6 @@ Wants=cloudflared-deepseek-quick.service
 [Service]
 Type=oneshot
 ExecStart=%h/.local/bin/update-cursor-deepseek-url
-SuccessExitStatus=2
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=update-cursor-deepseek-url

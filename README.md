@@ -19,7 +19,7 @@ That's it. The proxy runs on `127.0.0.1:9000` and is exposed via a Cloudflare Qu
 |---|---|
 | `deepseek-cursor-proxy` (port 9000) | Forwards Cursor → DeepSeek API, fixes `reasoning_content` for tool calls |
 | Cloudflare Tunnel | Exposes the local proxy via a public `*.trycloudflare.com` URL |
-| URL updater (timer) | Auto-updates Cursor's DB with the tunnel URL after each reboot |
+| URL updater (timer) | Auto-updates Cursor's DB with the tunnel URL after each reboot; retries until Cursor is closed |
 | systemd user services | All components auto-start at login |
 
 ## What You Need
@@ -34,10 +34,14 @@ After install, in Cursor Settings → Models:
 
 - **Model**: `deepseek-v4-pro` (thinking) or `deepseek-v4-flash` (fast)
 - **API Key**: Your DeepSeek API key
-- **Base URL**: The tunnel URL — auto-updated by the timer, or find it with:
+- **Base URL**: The tunnel URL (including `/v1`) — auto-updated by the timer, or find it with:
   ```bash
-  grep -o 'https://.*trycloudflare\.com' ~/.cache/deepseek-cursor-proxy/cloudflared.log
+  cat ~/.cache/deepseek-cursor-proxy/current-base-url.txt
+  # or while waiting for the updater:
+  cat ~/.cache/deepseek-cursor-proxy/pending-base-url.txt
   ```
+
+If Cursor is open when the tunnel URL changes after reboot, the updater saves a pending URL and retries every ~90 seconds until Cursor is closed and the SQLite DB can be patched.
 
 ## Management
 
@@ -52,8 +56,15 @@ systemctl --user restart deepseek-cursor-proxy
 journalctl --user -u deepseek-cursor-proxy -f
 journalctl --user -u cloudflared-deepseek-quick -f
 
-# Check tunnel URL
-grep -o 'https://.*trycloudflare\.com' ~/.cache/deepseek-cursor-proxy/cloudflared.log
+# Check applied / pending tunnel URL
+cat ~/.cache/deepseek-cursor-proxy/current-base-url.txt
+cat ~/.cache/deepseek-cursor-proxy/pending-base-url.txt
+
+# Updater logs
+journalctl --user -u update-cursor-deepseek-url -n 120 --no-pager
+
+# Verify tunnel API
+curl -sS "$(cat ~/.cache/deepseek-cursor-proxy/current-base-url.txt)/models"
 ```
 
 ## Files

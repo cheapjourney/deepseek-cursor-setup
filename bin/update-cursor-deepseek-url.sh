@@ -4,13 +4,17 @@
 # Cursor's state.vscdb to point to the new tunnel URL.
 set -euo pipefail
 
-CLOUDFLARED_LOG="${HOME}/.cache/deepseek-cursor-proxy/cloudflared.log"
+CACHE_DIR="${HOME}/.cache/deepseek-cursor-proxy"
+CLOUDFLARED_LOG="${CACHE_DIR}/cloudflared.log"
 CURSOR_DB="${HOME}/.config/Cursor/User/globalStorage/state.vscdb"
 BACKUP_DIR="${HOME}/Backups/cursor-state-auto"
+PENDING_BASE_URL_FILE="${CACHE_DIR}/pending-base-url.txt"
+CURRENT_BASE_URL_FILE="${CACHE_DIR}/current-base-url.txt"
 ACTIVE_KEY="src.vs.platform.reactivestorage.browser.reactiveStorageServiceImpl.persistentStorage.applicationUser"
 DRY_RUN=false
 WAIT_MAX_SEC=120
 WAIT_INTERVAL=3
+EXIT_TEMPFAIL=75
 
 log_info()  { echo "[INFO]  $*"; }
 log_warn()  { echo "[WARN]  $*" >&2; }
@@ -22,12 +26,70 @@ if [[ "${1:-}" == "--dry-run" ]]; then
     log_info "DRY-RUN mode — no changes will be written."
 fi
 
-extract_url() {
-    grep -oE 'https://[-a-z0-9]+\.trycloudflare\.com' "$CLOUDFLARED_LOG" 2>/dev/null | tail -1 || true
+normalize_base_url() {
+    local url="$1"
+    url="${url%/}"
+    if [[ "$url" != */v1 ]]; then
+        url="${url}/v1"
+    fi
+    printf '%s' "$url"
 }
 
 escape_sql() {
     printf "%s" "$1" | sed "s/'/''/g"
+}
+
+cursor_is_running() {
+    ps -eo pid=,args= | awk '/\/usr\/share\/cursor\/cursor([[:space:]]|$)/ { found=1 } END { exit found ? 0 : 1 }'
+}
+
+save_pending_base_url() {
+    local base_url="$1"
+    mkdir -p "$CACHE_DIR"
+    printf '%s\n' "$base_url" > "$PENDING_BASE_URL_FILE"
+}
+
+save_current_base_url() {
+    local base_url="$1"
+    mkdir -p "$CACHE_DIR"
+    printf '%s\n' "$base_url" > "$CURRENT_BASE_URL_FILE"
+}
+
+clear_pending_base_url() {
+    if [[ -f "$PENDING_BASE_URL_FILE" ]]; then
+        rm -f "$PENDING_BASE_URL_FILE"
+    fi
+}
+
+maybe_notify_pending() {
+    local base_url="$1"
+    if command -v notify-send &>/dev/null; then
+        notify-send \
+            "DeepSeek Cursor tunnel URL pending" \
+            "Close Cursor to apply the new tunnel URL: ${base_url}" \
+            2>/dev/null || true
+    fi
+}
+
+# Prefer the newest reachable URL from cloudflared logs (never a stale entry).
+find_reachable_root_url() {
+    local -a candidates=()
+    mapfile -t candidates < <(
+        grep -oE 'https://[-a-z0-9]+\.trycloudflare\.com' "$CLOUDFLARED_LOG" 2>/dev/null \
+            | tac \
+            | awk '!seen[$0]++'
+    )
+
+    local candidate=""
+    for candidate in "${candidates[@]}"; do
+        candidate="${candidate%/}"
+        if curl -fsS --max-time 10 "${candidate}/healthz" >/dev/null 2>&1 \
+           && curl -fsS --max-time 10 "${candidate}/v1/models" >/dev/null 2>&1; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
 }
 
 if [[ ! -f "$CLOUDFLARED_LOG" ]]; then
@@ -45,15 +107,9 @@ log_info "Waiting for tunnel URL to become reachable (max ${WAIT_MAX_SEC}s, ever
 NEW_ROOT_URL=""
 ELAPSED=0
 while [[ $ELAPSED -lt $WAIT_MAX_SEC ]]; do
-    CANDIDATE_URL="$(extract_url)"
-    if [[ -n "$CANDIDATE_URL" ]]; then
-        CANDIDATE_URL="${CANDIDATE_URL%/}"
-        if curl -fsS --max-time 10 "${CANDIDATE_URL}/healthz" >/dev/null 2>&1 \
-           && curl -fsS --max-time 10 "${CANDIDATE_URL}/v1/models" >/dev/null 2>&1; then
-            NEW_ROOT_URL="$CANDIDATE_URL"
-            log_info "Reachable tunnel URL found: $NEW_ROOT_URL"
-            break
-        fi
+    if NEW_ROOT_URL="$(find_reachable_root_url)"; then
+        log_info "Reachable tunnel URL found: $NEW_ROOT_URL"
+        break
     fi
     sleep "$WAIT_INTERVAL"
     ELAPSED=$((ELAPSED + WAIT_INTERVAL))
@@ -65,12 +121,7 @@ if [[ -z "$NEW_ROOT_URL" ]]; then
     exit 1
 fi
 
-log_info "Checking if Cursor is running..."
-if ps -eo pid=,args= | awk '/\/usr\/share\/cursor\/cursor([[:space:]]|$)/ { found=1 } END { exit found ? 0 : 1 }'; then
-    log_error "Cursor is running. Please close Cursor or retry later."
-    exit 2
-fi
-log_info "Cursor is not running."
+NEW_BASE_URL="$(normalize_base_url "$NEW_ROOT_URL")"
 
 log_info "Reading current Cursor config key from ItemTable..."
 CURRENT_VALUE="$(sqlite3 "$CURSOR_DB" "SELECT value FROM ItemTable WHERE key='$(escape_sql "$ACTIVE_KEY")';" 2>/dev/null || true)"
@@ -79,24 +130,46 @@ if [[ -z "$CURRENT_VALUE" ]]; then
     exit 1
 fi
 
-OLD_ROOT_URL="$(printf "%s" "$CURRENT_VALUE" | rg -o 'https://[-a-z0-9]+\.trycloudflare\.com' -N -m 1 || true)"
-if [[ -z "$OLD_ROOT_URL" ]]; then
+OLD_BASE_URL_RAW="$(printf "%s" "$CURRENT_VALUE" | rg -o 'https://[-a-z0-9]+\.trycloudflare\.com(/v1)?' -N -m 1 || true)"
+if [[ -z "$OLD_BASE_URL_RAW" ]]; then
     log_warn "No trycloudflare URL found in active key. No change."
     exit 0
 fi
 
-log_info "Current openAIBaseUrl:  $OLD_ROOT_URL"
-log_info "New openAIBaseUrl:      $NEW_ROOT_URL"
+OLD_BASE_URL="$(normalize_base_url "$OLD_BASE_URL_RAW")"
 
-if [[ "$OLD_ROOT_URL" == "$NEW_ROOT_URL" ]]; then
+log_info "Current openAIBaseUrl:  $OLD_BASE_URL"
+log_info "New openAIBaseUrl:      $NEW_BASE_URL"
+
+if [[ "$OLD_BASE_URL" == "$NEW_BASE_URL" ]]; then
     log_info "openAIBaseUrl is already up to date. No change needed."
+    if ! $DRY_RUN; then
+        save_current_base_url "$NEW_BASE_URL"
+        clear_pending_base_url
+    fi
     exit 0
 fi
 
+log_info "Checking if Cursor is running..."
+if cursor_is_running; then
+    if $DRY_RUN; then
+        log_dry "Cursor is running; would save pending URL and exit ${EXIT_TEMPFAIL}."
+        log_dry "Pending URL: $NEW_BASE_URL"
+        exit 0
+    fi
+
+    save_pending_base_url "$NEW_BASE_URL"
+    log_warn "Cursor is running. Saved pending tunnel URL to: $PENDING_BASE_URL_FILE"
+    log_warn "Close Cursor so the updater can patch state.vscdb; the timer will retry automatically."
+    maybe_notify_pending "$NEW_BASE_URL"
+    exit "$EXIT_TEMPFAIL"
+fi
+log_info "Cursor is not running."
+
 if $DRY_RUN; then
     log_dry "Would patch key: $ACTIVE_KEY"
-    log_dry "From: $OLD_ROOT_URL"
-    log_dry "To:   $NEW_ROOT_URL"
+    log_dry "From: $OLD_BASE_URL"
+    log_dry "To:   $NEW_BASE_URL"
     log_dry "No changes written."
     exit 0
 fi
@@ -106,14 +179,13 @@ BACKUP_FILE="${BACKUP_DIR}/state.vscdb.$(date +%Y%m%d-%H%M%S).bak"
 cp "$CURSOR_DB" "$BACKUP_FILE"
 log_info "Backup created: $BACKUP_FILE"
 
-python3 - "$CURSOR_DB" "$NEW_ROOT_URL" "$ACTIVE_KEY" "$OLD_ROOT_URL" "$BACKUP_FILE" <<'PYEOF'
+python3 - "$CURSOR_DB" "$NEW_BASE_URL" "$ACTIVE_KEY" "$BACKUP_FILE" <<'PYEOF'
 import sys, re, sqlite3
 
 cursor_db = sys.argv[1]
-new_root_url = sys.argv[2]
+new_base_url = sys.argv[2]
 active_key = sys.argv[3]
-old_root_url = sys.argv[4]
-backup_file = sys.argv[5]
+backup_file = sys.argv[4]
 
 con = sqlite3.connect(cursor_db)
 try:
@@ -124,12 +196,16 @@ try:
         sys.exit(1)
 
     current_value = row[0]
-    escaped_old = re.escape(old_root_url)
-    new_value = re.sub(escaped_old, new_root_url, current_value)
+    new_value, count = re.subn(
+        r'https://[-a-z0-9]+\.trycloudflare\.com(?:/v1)?',
+        new_base_url,
+        current_value,
+        count=1,
+    )
 
-    if new_value == current_value:
-        print("[WARN]  No replacement match found in active key. No change.")
-        sys.exit(0)
+    if count == 0 or new_value == current_value:
+        print("[ERROR] No trycloudflare URL replaced in active key.", file=sys.stderr)
+        sys.exit(1)
 
     con.execute("UPDATE ItemTable SET value=? WHERE key=?", (new_value, active_key))
     con.commit()
@@ -137,8 +213,12 @@ try:
     con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     print("[INFO]  Update complete.")
     print("[INFO]  Updated: ItemTable/" + active_key)
-    print("[INFO]  New openAIBaseUrl: " + new_root_url)
+    print("[INFO]  New openAIBaseUrl: " + new_base_url)
     print("[INFO]  Backup: " + backup_file)
 finally:
     con.close()
 PYEOF
+
+save_current_base_url "$NEW_BASE_URL"
+clear_pending_base_url
+log_info "Applied tunnel URL saved to: $CURRENT_BASE_URL_FILE"

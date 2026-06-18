@@ -3,6 +3,8 @@
 # Run this after a fresh Ubuntu install to restore the full DeepSeek + Cursor setup.
 set -euo pipefail
 
+SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 REPO_URL="https://github.com/yxlao/deepseek-cursor-proxy.git"
 CLOUDFLARED_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
 
@@ -74,7 +76,7 @@ fi
 CONFIG_DIR="$HOME/.deepseek-cursor-proxy"
 mkdir -p "$CONFIG_DIR"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$SETUP_DIR"
 if [[ -f "$CONFIG_DIR/config.yaml" ]]; then
     warn "Config already exists at $CONFIG_DIR/config.yaml, skipping."
 else
@@ -119,9 +121,10 @@ echo ""
 echo "Next: In Cursor, set the API key:"
 echo "  → Use model: deepseek-v4-pro (thinking) or deepseek-v4-flash (fast)"
 echo "  → API Key: your DeepSeek API key"
-echo "  → Base URL: check the tunnel URL in:"
-echo "      cat ~/.cache/deepseek-cursor-proxy/cloudflared.log"
-echo "    Or wait for the auto-updater to configure Cursor."
+echo "  → Base URL: auto-applied to Cursor when it is closed, or check:"
+echo "      cat ~/.cache/deepseek-cursor-proxy/current-base-url.txt"
+echo "    If Cursor was open during reboot, close it and wait for:"
+echo "      cat ~/.cache/deepseek-cursor-proxy/pending-base-url.txt"
 echo ""
 echo "Management:"
 echo "  systemctl --user status deepseek-cursor-proxy"
