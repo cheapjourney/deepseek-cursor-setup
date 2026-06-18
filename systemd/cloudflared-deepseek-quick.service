@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare Quick Tunnel for DeepSeek Cursor Proxy
+After=network-online.target deepseek-cursor-proxy.service
+Wants=network-online.target deepseek-cursor-proxy.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/mkdir -p %h/.cache/deepseek-cursor-proxy
+ExecStartPre=/usr/bin/rm -f %h/.cache/deepseek-cursor-proxy/cloudflared.log
+ExecStart=%h/.local/bin/cloudflared tunnel --url http://127.0.0.1:9000 --logfile %h/.cache/deepseek-cursor-proxy/cloudflared.log
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

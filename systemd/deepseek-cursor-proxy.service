@@ -1,0 +1,14 @@
+[Unit]
+Description=DeepSeek Cursor Proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/tools/deepseek-cursor-proxy
+ExecStart=%h/tools/deepseek-cursor-proxy/.venv/bin/deepseek-cursor-proxy --config %h/.deepseek-cursor-proxy/config.yaml --host 127.0.0.1 --port 9000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

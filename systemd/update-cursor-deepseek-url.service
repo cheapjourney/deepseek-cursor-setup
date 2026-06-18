@@ -1,0 +1,15 @@
+[Unit]
+Description=Update Cursor DeepSeek Proxy URL after Cloudflare Quick Tunnel starts
+After=cloudflared-deepseek-quick.service
+Wants=cloudflared-deepseek-quick.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/update-cursor-deepseek-url
+SuccessExitStatus=2
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=update-cursor-deepseek-url
+
+[Install]
+WantedBy=default.target

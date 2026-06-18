@@ -1,0 +1,12 @@
+[Unit]
+Description=Retry Cursor DeepSeek URL update after Cloudflare Quick Tunnel start
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=update-cursor-deepseek-url.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

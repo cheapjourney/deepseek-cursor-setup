@@ -1,0 +1,42 @@
+# DeepSeek Cursor Proxy configuration
+# The proxy forwards requests from Cursor -> DeepSeek API.
+# Cursor's own API key is passed through transparently.
+
+# Upstream DeepSeek API endpoint
+base_url: https://api.deepseek.com
+
+# Default model (v4-pro for thinking, v4-flash for fast)
+model: deepseek-v4-pro
+
+# Thinking mode: enabled | disabled | auto
+thinking: enabled
+
+# Reasoning effort: min | low | medium | high | max
+reasoning_effort: max
+
+# Display reasoning in Cursor's UI
+display_reasoning: true
+collasible_reasoning: true
+
+# Local proxy listen address
+host: 127.0.0.1
+port: 9000
+
+# ngrok is disabled — we use Cloudflare tunnel instead
+ngrok: false
+
+# Logging
+verbose: false
+
+# Request limits
+request_timeout: 300
+max_request_body_bytes: 20971520
+
+# CORS
+cors: false
+
+# Reasoning cache (stores thinking tokens for tool-call roundtrips)
+reasoning_content_path: reasoning_content.sqlite3
+missing_reasoning_strategy: recover
+reasoning_cache_max_age_seconds: 2592000
+reasoning_cache_max_rows: 100000

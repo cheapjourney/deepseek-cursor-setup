@@ -1,0 +1,5 @@
+# Ignore any downloaded binaries or cache
+cloudflared
+*.log
+__pycache__/
+.venv/
