@@ -38,6 +38,7 @@ disable_service() {
 }
 
 log "Stopping services..."
+stop_service "deepseek-cursor-boot-prepare.service"
 stop_service "deepseek-cursor-proxy.service"
 stop_service "cloudflared-deepseek-quick.service"
 stop_service "update-cursor-deepseek-url.timer"
@@ -46,6 +47,7 @@ stop_service "update-cursor-deepseek-url.service"
 # ── Disable services ────────────────────────────────────────────────
 echo ""
 log "Disabling services..."
+disable_service "deepseek-cursor-boot-prepare.service"
 disable_service "deepseek-cursor-proxy.service"
 disable_service "cloudflared-deepseek-quick.service"
 disable_service "update-cursor-deepseek-url.timer"
@@ -59,6 +61,7 @@ UNITS=(
     "cloudflared-deepseek-quick.service"
     "update-cursor-deepseek-url.service"
     "update-cursor-deepseek-url.timer"
+    "deepseek-cursor-boot-prepare.service"
 )
 
 log "Removing systemd unit files from $SYSTEMD_USER_DIR..."
@@ -78,14 +81,56 @@ if ! $removed_any; then
     log "No unit files to remove"
 fi
 
-# ── Remove helper script ────────────────────────────────────────────
+# ── Remove helper scripts ─────────────────────────────────────────────
 echo ""
-UPDATE_BIN="$HOME/.local/bin/update-cursor-deepseek-url"
-if [[ -f "$UPDATE_BIN" ]]; then
-    rm -f "$UPDATE_BIN"
-    log "Removed: $UPDATE_BIN"
-else
-    log "Helper script not found (already removed): $UPDATE_BIN"
+for bin_path in \
+    "$HOME/.local/bin/update-cursor-deepseek-url" \
+    "$HOME/.local/bin/deepseek-cursor-boot-prepare" \
+    "$HOME/.local/bin/cursor-deepseek"
+do
+    if [[ -f "$bin_path" ]]; then
+        rm -f "$bin_path"
+        log "Removed: $bin_path"
+    else
+        log "Not found (already removed): $bin_path"
+    fi
+done
+
+# ── Remove legacy launcher desktop files ──────────────────────────────
+echo ""
+APPLICATIONS_DIR="$HOME/.local/share/applications"
+AUTOSTART_DIR="$HOME/.config/autostart"
+
+remove_desktop_if_wrapper() {
+    local desktop="$1"
+    [[ -f "$desktop" ]] || return 0
+    if grep -q 'cursor-deepseek' "$desktop" 2>/dev/null; then
+        rm -f "$desktop"
+        log "Removed legacy desktop override: $desktop"
+    fi
+}
+
+for legacy in \
+    "$APPLICATIONS_DIR/cursor-deepseek.desktop" \
+    "$AUTOSTART_DIR/cursor-deepseek.desktop"
+do
+    if [[ -f "$legacy" ]]; then
+        rm -f "$legacy"
+        log "Removed legacy launcher: $legacy"
+    fi
+done
+
+shopt -s nullglob
+for desktop in "$APPLICATIONS_DIR"/*.desktop; do
+    remove_desktop_if_wrapper "$desktop"
+done
+for desktop in "$AUTOSTART_DIR"/*.desktop; do
+    remove_desktop_if_wrapper "$desktop"
+done
+shopt -u nullglob
+
+if command -v update-desktop-database &>/dev/null && [[ -d "$APPLICATIONS_DIR" ]]; then
+    update-desktop-database "$APPLICATIONS_DIR" 2>/dev/null || true
 fi
 
 # ── Reload systemd ──────────────────────────────────────────────────
@@ -100,7 +145,7 @@ echo " Uninstall complete!"
 echo "======================================"
 echo ""
 echo "Services stopped and disabled. Systemd unit files and helper"
-echo "script have been removed."
+echo "scripts have been removed."
 echo ""
 echo "Optional — remove data/config/cache directories:"
 echo ""
@@ -118,4 +163,7 @@ echo "  rm -rf ~/Backups/cursor-state-auto"
 echo ""
 echo "These directories contain user data, configs, and backups."
 echo "They are NOT automatically removed."
+echo ""
+echo "Disabled Cursor autostart entries (if any) are in:"
+echo "  ~/.config/autostart-disabled/"
 echo ""

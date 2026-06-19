@@ -5,6 +5,7 @@ After=default.target network-online.target deepseek-cursor-proxy.service
 Wants=deepseek-cursor-proxy.service cloudflared-deepseek-quick.service
 
 [Service]
+SuccessExitStatus=75
 Type=oneshot
 ExecStart=%h/.local/bin/deepseek-cursor-boot-prepare
 StandardOutput=journal
