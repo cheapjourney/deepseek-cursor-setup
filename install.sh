@@ -99,20 +99,15 @@ cp "$SCRIPT_DIR/systemd/deepseek-cursor-proxy.service" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/cloudflared-deepseek-quick.service" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/update-cursor-deepseek-url.service" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/update-cursor-deepseek-url.timer" "$SYSTEMD_DIR/"
+cp "$SCRIPT_DIR/systemd/deepseek-cursor-boot-prepare.service" "$SYSTEMD_DIR/"
 
-systemctl --user daemon-reload
-systemctl --user enable --now deepseek-cursor-proxy.service
-systemctl --user enable --now cloudflared-deepseek-quick.service
-systemctl --user enable --now update-cursor-deepseek-url.timer
-
-log "Services installed and enabled"
-
-# ── Install update script ───────────────────────────────────────────
+# ── Install helper scripts ────────────────────────────────────────────
 for script in \
+    "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" \
+    "$SCRIPT_DIR/bin/deepseek-cursor-boot-prepare.sh" \
     "$SETUP_DIR/install.sh" \
     "$SETUP_DIR/bootstrap.sh" \
-    "$SETUP_DIR/uninstall.sh" \
-    "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh"
+    "$SETUP_DIR/uninstall.sh"
 do
     if ! bash -n "$script"; then
         err "Shell syntax check failed: $script"
@@ -120,10 +115,37 @@ do
     fi
 done
 
+log "Stopping URL updater before replacing scripts..."
+systemctl --user stop update-cursor-deepseek-url.timer 2>/dev/null || true
+systemctl --user stop update-cursor-deepseek-url.service 2>/dev/null || true
+systemctl --user reset-failed update-cursor-deepseek-url.service 2>/dev/null || true
+
 UPDATE_BIN="$HOME/.local/bin/update-cursor-deepseek-url"
-cp "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" "$UPDATE_BIN"
-chmod +x "$UPDATE_BIN"
-log "Update script installed to $UPDATE_BIN"
+BOOT_PREPARE_BIN="$HOME/.local/bin/deepseek-cursor-boot-prepare"
+install -m 0755 "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" "$UPDATE_BIN"
+install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-boot-prepare.sh" "$BOOT_PREPARE_BIN"
+log "Installed: $UPDATE_BIN"
+log "Installed: $BOOT_PREPARE_BIN"
+
+# Remove legacy launcher if present from older installs.
+rm -f "$HOME/.local/bin/cursor-deepseek"
+rm -f "$HOME/.local/share/applications/cursor-deepseek.desktop"
+rm -f "$HOME/.config/autostart/cursor-deepseek.desktop"
+
+systemctl --user daemon-reload
+systemctl --user enable deepseek-cursor-proxy.service
+systemctl --user enable cloudflared-deepseek-quick.service
+systemctl --user enable update-cursor-deepseek-url.timer
+systemctl --user enable deepseek-cursor-boot-prepare.service
+systemctl --user start deepseek-cursor-proxy.service
+systemctl --user start cloudflared-deepseek-quick.service
+systemctl --user start update-cursor-deepseek-url.timer
+
+log "Services installed and enabled"
+
+log "Triggering boot preparation in the background..."
+systemctl --user reset-failed deepseek-cursor-boot-prepare.service 2>/dev/null || true
+systemctl --user --no-block start deepseek-cursor-boot-prepare.service >/dev/null 2>&1 || true
 
 # ── Done ────────────────────────────────────────────────────────────
 echo ""
@@ -133,8 +155,22 @@ echo "======================================"
 echo ""
 echo "Services running:"
 systemctl --user is-active deepseek-cursor-proxy.service && echo "  ✅ deepseek-cursor-proxy (port 9000)" || echo "  ❌ deepseek-cursor-proxy"
-systemctl --user is-active cloudflared-deepseek-quick.service && echo "  ✅ cloudflared tunnel" || echo "  ❌ cloudflared"
+systemctl --user is-active cloudflared-deepseek-quick.service && echo "  ✅ cloudflared tunnel (HTTP/2)" || echo "  ❌ cloudflared"
 systemctl --user is-active update-cursor-deepseek-url.timer && echo "  ✅ cursor URL updater timer" || echo "  ❌ cursor URL updater"
+echo ""
+echo "Boot preparation was triggered in the background. It may take up to a"
+echo "few minutes for Cloudflare Quick Tunnel DNS to become ready."
+echo ""
+echo "After reboot/login, deepseek-cursor-boot-prepare runs automatically:"
+echo "  1. rebuilds Quick Tunnel (HTTP/2)"
+echo "  2. waits for /models"
+echo "  3. patches Cursor DB if Cursor is closed"
+echo ""
+echo "Open Cursor once current-base-url.txt exists and this succeeds:"
+echo "  curl -fsS \"\$(cat ~/.cache/deepseek-cursor-proxy/current-base-url.txt)/models\""
+echo ""
+echo "Check progress:"
+echo "  journalctl --user -u deepseek-cursor-boot-prepare -b -n 120 --no-pager"
 echo ""
 echo "Next: In Cursor, set the API key:"
 echo "  → Use model: deepseek-v4-pro (thinking) or deepseek-v4-flash (fast)"

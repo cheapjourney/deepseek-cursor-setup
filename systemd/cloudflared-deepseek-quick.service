@@ -9,7 +9,7 @@ ExecStartPre=/usr/bin/mkdir -p %h/.cache/deepseek-cursor-proxy
 ExecStartPre=/usr/bin/rm -f %h/.cache/deepseek-cursor-proxy/cloudflared.log
 ExecStartPre=/usr/bin/rm -f %h/.cache/deepseek-cursor-proxy/current-base-url.txt
 ExecStartPre=/usr/bin/rm -f %h/.cache/deepseek-cursor-proxy/pending-base-url.txt
-ExecStart=%h/.local/bin/cloudflared tunnel --url http://127.0.0.1:9000 --logfile %h/.cache/deepseek-cursor-proxy/cloudflared.log
+ExecStart=%h/.local/bin/cloudflared tunnel --protocol http2 --url http://127.0.0.1:9000 --logfile %h/.cache/deepseek-cursor-proxy/cloudflared.log
 Restart=on-failure
 RestartSec=5
 

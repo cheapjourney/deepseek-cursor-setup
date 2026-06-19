@@ -1,0 +1,16 @@
+[Unit]
+Description=Prepare DeepSeek Cursor Quick Tunnel and patch Cursor URL at login
+Documentation=https://github.com/cheapjourney/deepseek-cursor-setup
+After=default.target network-online.target deepseek-cursor-proxy.service
+Wants=deepseek-cursor-proxy.service cloudflared-deepseek-quick.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/deepseek-cursor-boot-prepare
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deepseek-cursor-boot-prepare
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

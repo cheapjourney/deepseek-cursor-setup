@@ -80,30 +80,62 @@ cat ~/.cache/deepseek-cursor-proxy/pending-base-url.txt
 cat ~/.cache/deepseek-cursor-proxy/stale-base-url.txt
 ```
 
-If `current-base-url.txt` is missing, wait for the updater timer or inspect the cloudflared log for the latest tunnel URL.
+If `current-base-url.txt` is missing, wait for boot preparation or the updater timer, or inspect the cloudflared log for the latest tunnel URL.
+
+## Boot order / reboot behavior
+
+This project uses a **Cloudflare Quick Tunnel** (not a named tunnel). Quick Tunnel URLs **change after reboot**.
+
+The tunnel service runs cloudflared with **`--protocol http2`** instead of QUIC for better reliability behind home firewalls and DNS-over-TLS (DoT) setups.
+
+On login, `deepseek-cursor-boot-prepare.service` runs once in the background and:
+
+1. Restarts `cloudflared-deepseek-quick.service` to rebuild the Quick Tunnel
+2. Waits until system DNS resolves the hostname and `/v1/models` succeeds
+3. Runs `update-cursor-deepseek-url.service` to patch Cursor's `state.vscdb`
+
+Running `./install.sh` also triggers boot preparation, but **does not wait** for it to finish. Install completes immediately; tunnel DNS may take a few minutes.
+
+The normal **Cursor icon is untouched**. No vendor Cursor files are modified. No separate launcher is required.
+
+If you open Cursor too early, the updater writes `pending-base-url.txt` instead of patching the DB. Close Cursor and the retry timer (every 60 seconds) will apply the URL.
+
+Open Cursor once `current-base-url.txt` exists and this readiness check succeeds:
+
+```bash
+curl -fsS "$(cat ~/.cache/deepseek-cursor-proxy/current-base-url.txt)/models"
+```
+
+Manual boot preparation:
+
+```bash
+systemctl --user restart deepseek-cursor-boot-prepare.service
+journalctl --user -u deepseek-cursor-boot-prepare -b -n 120 --no-pager
+```
 
 ## How the Cloudflare Tunnel Updater Works
 
-1. `cloudflared-deepseek-quick.service` starts on boot and creates a Quick Tunnel, logging its URL to `~/.cache/deepseek-cursor-proxy/cloudflared.log`.
-2. `update-cursor-deepseek-url.timer` fires 90 seconds after boot and every 90 seconds thereafter.
-3. Each time the timer fires, `update-cursor-deepseek-url.sh`:
+1. `cloudflared-deepseek-quick.service` starts on boot and creates a Quick Tunnel over **HTTP/2** (`--protocol http2`), logging its URL to `~/.cache/deepseek-cursor-proxy/cloudflared.log`.
+2. `deepseek-cursor-boot-prepare.service` runs once at login: rebuilds the tunnel, waits for `/models`, and triggers the updater.
+3. `update-cursor-deepseek-url.timer` fires 30 seconds after boot and every 60 seconds after each updater run completes.
+4. Each time the updater runs, `update-cursor-deepseek-url.sh`:
     - Scans the cloudflared log for the **newest reachable** `trycloudflare.com` URL (validates both `/healthz` and `/v1/models` are reachable).
     - Normalizes it to `https://<host>.trycloudflare.com/v1`.
     - If no reachable URL is found, moves a stale `current-base-url.txt` to `stale-base-url.txt` (no DB change).
     - Checks if Cursor is running:
         - **Cursor closed**: Patches `state.vscdb`, writes `current-base-url.txt`, removes pending file. Creates a backup in `~/Backups/cursor-state-auto/`.
-        - **Cursor open**: Writes `pending-base-url.txt`, exits with code `75` so systemd retries.
-4. When `cloudflared-deepseek-quick.service` restarts, it clears `current-base-url.txt` and `pending-base-url.txt` so stale URLs are not reused.
-5. The timer's retry loop ensures the URL is eventually applied once Cursor is closed.
+        - **Cursor open**: Writes `pending-base-url.txt`, exits with code `75` (expected temporary state; timer retries).
+5. When `cloudflared-deepseek-quick.service` restarts, it clears `current-base-url.txt` and `pending-base-url.txt` so stale URLs are not reused.
+6. The timer's retry loop ensures the URL is eventually applied once Cursor is closed.
 
 ## Reboot Behavior
 
 After a reboot:
 
 - The proxy and tunnel services start automatically.
-- The URL updater timer fires 90 seconds after boot.
-- Cloudflare Quick Tunnel URLs **can change after reboot** — the updater detects the new URL and patches Cursor's database.
-- If Cursor is open during reboot, the pending URL is saved and applied when Cursor is next closed.
+- Boot preparation rebuilds the Quick Tunnel and patches Cursor's DB if Cursor is closed.
+- Cloudflare Quick Tunnel URLs **can change after reboot** — boot preparation and the updater handle this.
+- If Cursor is open during boot preparation, the pending URL is saved and applied when Cursor is next closed.
 
 ## Files Installed
 
@@ -112,10 +144,12 @@ After a reboot:
 | `~/tools/deepseek-cursor-proxy/` | Python proxy (cloned from yxlao/deepseek-cursor-proxy) |
 | `~/.local/bin/cloudflared` | Cloudflare tunnel binary |
 | `~/.local/bin/update-cursor-deepseek-url` | Tunnel URL updater script |
+| `~/.local/bin/deepseek-cursor-boot-prepare` | Login boot preparation script |
+| `~/.config/systemd/user/deepseek-cursor-boot-prepare.service` | Boot preparation oneshot (runs at login) |
 | `~/.config/systemd/user/deepseek-cursor-proxy.service` | Proxy systemd service |
-| `~/.config/systemd/user/cloudflared-deepseek-quick.service` | Cloudflare tunnel systemd service |
+| `~/.config/systemd/user/cloudflared-deepseek-quick.service` | Cloudflare Quick Tunnel (HTTP/2 mode) |
 | `~/.config/systemd/user/update-cursor-deepseek-url.service` | URL updater oneshot service |
-| `~/.config/systemd/user/update-cursor-deepseek-url.timer` | URL updater timer (90s interval) |
+| `~/.config/systemd/user/update-cursor-deepseek-url.timer` | URL updater timer (60s retry) |
 | `~/.deepseek-cursor-proxy/config.yaml` | Proxy configuration |
 | `~/.cache/deepseek-cursor-proxy/cloudflared.log` | Tunnel logs |
 | `~/.cache/deepseek-cursor-proxy/current-base-url.txt` | Verified reachable tunnel base URL (includes `/v1`) |
@@ -131,7 +165,11 @@ Run these commands to verify everything is working:
 # Check service status
 systemctl --user status deepseek-cursor-proxy --no-pager
 systemctl --user status cloudflared-deepseek-quick --no-pager
+systemctl --user status deepseek-cursor-boot-prepare.service --no-pager
 systemctl --user status update-cursor-deepseek-url.timer --no-pager
+
+# Boot preparation logs
+journalctl --user -u deepseek-cursor-boot-prepare -b -n 120 --no-pager
 
 # View updater logs
 journalctl --user -u update-cursor-deepseek-url -n 120 --no-pager
@@ -154,11 +192,11 @@ To update the setup scripts and proxy to the latest version:
 cd ~/deepseek-cursor-setup
 git pull --ff-only
 
-# Re-run the installer
+# Re-run the installer (boot preparation runs in the background)
 ./install.sh
 ```
 
-The installer automatically updates the proxy via `git pull --ff-only` if it already exists.
+The installer automatically updates the proxy via `git pull --ff-only` if it already exists. Install does not block on boot preparation completing.
 
 ## Uninstall
 
@@ -186,9 +224,9 @@ Cloudflare error 1033 means the Quick Tunnel URL is gone or not yet reachable (c
    echo pending:; cat ~/.cache/deepseek-cursor-proxy/pending-base-url.txt 2>/dev/null || echo "no pending"
    echo stale:; cat ~/.cache/deepseek-cursor-proxy/stale-base-url.txt 2>/dev/null || echo "no stale"
    ```
-3. Close Cursor and let the updater timer retry (every ~90 seconds), or trigger manually:
+3. Close Cursor and let the updater timer retry (every ~60 seconds), or trigger manually:
    ```bash
-   systemctl --user start update-cursor-deepseek-url.service
+   systemctl --user restart deepseek-cursor-boot-prepare.service
    ```
 4. If `current-base-url.txt` is missing, wait for the updater or inspect cloudflared logs — do not reuse a URL from `stale-base-url.txt`.
 
@@ -196,23 +234,41 @@ If DNS is still propagating, wait 30–60 seconds and try again.
 
 ### Quick Tunnel DNS Not Ready
 
-The updater script waits up to 120 seconds for the tunnel URL to become reachable. If it still fails, check:
+Boot preparation validates tunnel hostnames in this order:
+
+1. Quick Tunnel URL appears in `cloudflared.log`
+2. `Registered tunnel connection` appears in the log
+3. **Cloudflare DoH** (`https://cloudflare-dns.com/dns-query`) returns Status 0 with A records — checked **before** system DNS to avoid poisoning a router with early NXDOMAIN
+4. System resolver (`getent hosts`, `resolvectl query`) after DoH succeeds
+
+If Cloudflare DoH resolves the hostname but the system resolver still returns NXDOMAIN, the router may have **negative-cached** the name. Boot preparation flushes local caches and waits; if the router cache remains stale, clear or allowlist `*.trycloudflare.com` on your DNS gateway/router.
+
+```bash
+getent hosts example.trycloudflare.com
+resolvectl query example.trycloudflare.com   # if available
+```
+
+If your firewall enforces **Cloudflare DNS-over-TLS**, direct queries like `dig @1.1.1.1` may timeout by design. That is **not** treated as a readiness failure — Cloudflare DoH and the system resolver are used instead.
+
+If preparation or the updater still fails, check:
 
 ```bash
 journalctl --user -u cloudflared-deepseek-quick --no-pager -n 50
+journalctl --user -u deepseek-cursor-boot-prepare -b -n 120 --no-pager
 ```
 
 ### Cursor Still Using Old URL
 
-If Cursor was open when the tunnel URL changed, the updater cannot patch `state.vscdb`. Close Cursor and wait up to 90 seconds for the timer to retry. You can also trigger the update manually:
+If Cursor was open when the tunnel URL changed, the updater cannot patch `state.vscdb`. Close Cursor and wait up to 60 seconds for the timer to retry. You can also run boot preparation manually:
 
 ```bash
-systemctl --user start update-cursor-deepseek-url.service
+systemctl --user restart deepseek-cursor-boot-prepare.service
 ```
 
 Check the logs:
 
 ```bash
+journalctl --user -u deepseek-cursor-boot-prepare -b -n 120 --no-pager
 journalctl --user -u update-cursor-deepseek-url --no-pager -n 120
 ```
 
@@ -246,6 +302,9 @@ journalctl --user -u deepseek-cursor-proxy -f
 journalctl --user -u cloudflared-deepseek-quick -f
 # Also written to:
 cat ~/.cache/deepseek-cursor-proxy/cloudflared.log
+
+# Boot preparation logs
+journalctl --user -u deepseek-cursor-boot-prepare -f
 
 # URL updater logs
 journalctl --user -u update-cursor-deepseek-url -n 120 --no-pager
