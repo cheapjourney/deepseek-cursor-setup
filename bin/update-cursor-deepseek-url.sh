@@ -62,14 +62,13 @@ clear_pending_base_url() {
     fi
 }
 
-maybe_notify_pending() {
-    local base_url="$1"
-    if command -v notify-send &>/dev/null; then
-        notify-send \
-            "DeepSeek Cursor tunnel URL pending" \
-            "Close Cursor to apply the new tunnel URL: ${base_url}" \
-            2>/dev/null || true
+send_desktop_notification() {
+    if [[ "${DEEPSEEK_CURSOR_NOTIFY:-0}" != "1" ]]; then
+        return 0
     fi
+
+    command -v notify-send >/dev/null 2>&1 || return 0
+    notify-send "DeepSeek Cursor Proxy" "$*" >/dev/null 2>&1 || true
 }
 
 base_url_is_reachable() {
@@ -222,7 +221,7 @@ if cursor_is_running; then
     save_pending_base_url "$NEW_BASE_URL"
     log_warn "Cursor is running. Saved pending tunnel URL to: $PENDING_BASE_URL_FILE"
     log_warn "Close Cursor so the updater can patch state.vscdb; the timer will retry automatically."
-    maybe_notify_pending "$NEW_BASE_URL"
+    send_desktop_notification "Close Cursor to apply the new tunnel URL: ${NEW_BASE_URL}"
     exit "$EXIT_TEMPFAIL"
 fi
 log_info "Cursor is not running."

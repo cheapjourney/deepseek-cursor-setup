@@ -280,7 +280,7 @@ When Cursor is open, the updater saves the pending URL to:
 ~/.cache/deepseek-cursor-proxy/pending-base-url.txt
 ```
 
-Close Cursor, and the timer will apply it on the next retry. A desktop notification is also sent if `notify-send` is available.
+Close Cursor, and the timer will apply it on the next retry. Status is logged to the journal (`journalctl --user -u update-cursor-deepseek-url`). Desktop notifications are off by default; set `DEEPSEEK_CURSOR_NOTIFY=1` in the updater service environment to opt in.
 
 ### Missing Dependencies
 
