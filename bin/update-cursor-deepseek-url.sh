@@ -37,7 +37,7 @@ normalize_base_url() {
 }
 
 escape_sql() {
-    printf "%s" "$1" | sed "s/'/''/g"
+    printf '%s' "$1" | sed "s/'/''/g"
 }
 
 cursor_is_running() {
@@ -190,7 +190,7 @@ if [[ -z "$CURRENT_VALUE" ]]; then
     exit 1
 fi
 
-OLD_BASE_URL_RAW="$(printf "%s" "$CURRENT_VALUE" | rg -o 'https://[-a-z0-9]+\.trycloudflare\.com(/v1)?' -N -m 1 || true)"
+OLD_BASE_URL_RAW="$(printf '%s' "$CURRENT_VALUE" | rg -o 'https://[-a-z0-9]+\.trycloudflare\.com(/v1)?' -N -m 1 || true)"
 if [[ -z "$OLD_BASE_URL_RAW" ]]; then
     log_warn "No trycloudflare URL found in active key. No change."
     exit 0

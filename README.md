@@ -328,3 +328,7 @@ journalctl --user -u update-cursor-deepseek-url -n 120 --no-pager
 
 - [deepseek-cursor-proxy](https://github.com/yxlao/deepseek-cursor-proxy) by Yixing Lao — the proxy that makes this all work
 - [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) — free reverse tunneling
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.

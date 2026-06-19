@@ -235,36 +235,11 @@ wait_for_tunnel_http() {
     return 1
 }
 
-verify_try_one_tunnel_dns_order() {
-    local script_path="$0"
-    local block=""
-    local doh_line=""
-    local sys_line=""
-
-    block="$(sed -n '/^try_one_tunnel() {/,/^}/p' "$script_path")"
-    [[ -n "$block" ]] || {
-        log_error "Self-check failed: could not extract try_one_tunnel() from $script_path"
-        exit 1
-    }
-
-    if echo "$block" | grep -qE 'Waiting for system DNS resolution|Candidate DNS not resolvable'; then
-        log_error "Self-check failed: legacy DNS-first log strings still present in try_one_tunnel()."
-        exit 1
-    fi
-
-    doh_line="$(echo "$block" | grep -n 'wait_for_cloudflare_doh' | head -1 | cut -d: -f1 || true)"
-    sys_line="$(echo "$block" | grep -nE 'wait_for_system_dns_after_doh|host_resolves.*LAST_TUNNEL_HOST' | head -1 | cut -d: -f1 || true)"
-
-    if [[ -z "$doh_line" || -z "$sys_line" ]]; then
-        log_error "Self-check failed: could not locate DoH/system DNS calls in try_one_tunnel()."
-        exit 1
-    fi
-
-    if [[ "$sys_line" -lt "$doh_line" ]]; then
-        log_error "Self-check failed: system DNS is referenced before Cloudflare DoH in try_one_tunnel()."
-        exit 1
-    fi
-}
+# Design invariant: host_resolves() refuses system DNS lookups unless
+# DNS_DOH_GATE_PASSED has been set to true by wait_for_cloudflare_doh().
+# This prevents querying the system resolver before Cloudflare DoH is
+# confirmed, avoiding negative-cache poisoning on router DNS.
+# Violating this order causes an immediate error at runtime.
 
 try_one_tunnel() {
     local attempt="$1"
@@ -422,8 +397,6 @@ print_diagnostics() {
 }
 
 main() {
-    verify_try_one_tunnel_dns_order
-
     log_info "Preparing DeepSeek Cursor Quick Tunnel at login..."
 
     log_info "Stopping URL updater timer/service while preparing..."

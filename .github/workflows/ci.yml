@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash syntax check (top-level)
+        run: |
+          bash -n install.sh
+          bash -n uninstall.sh
+          bash -n bootstrap.sh
+
+      - name: bash syntax check (bin/)
+        run: |
+          bash -n bin/update-cursor-deepseek-url.sh
+          bash -n bin/deepseek-cursor-boot-prepare.sh
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          ignore_paths: install.sh.bak
+
+      - name: git diff --check
+        run: git diff --check
+
+      - name: smoke test
+        run: bash test/smoke.sh
