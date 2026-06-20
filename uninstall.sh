@@ -45,6 +45,7 @@ stop_service "update-cursor-deepseek-url.timer"
 stop_service "update-cursor-deepseek-url.service"
 stop_service "deepseek-cursor-pending-watcher.path"
 stop_service "deepseek-cursor-pending-watcher.service"
+stop_service "deepseek-cursor-resume-recover.service"
 
 # ── Disable services ────────────────────────────────────────────────
 echo ""
@@ -56,6 +57,7 @@ disable_service "update-cursor-deepseek-url.timer"
 disable_service "update-cursor-deepseek-url.service"
 disable_service "deepseek-cursor-pending-watcher.path"
 disable_service "deepseek-cursor-pending-watcher.service"
+disable_service "deepseek-cursor-resume-recover.service"
 
 # ── Remove systemd unit files ───────────────────────────────────────
 echo ""
@@ -68,6 +70,7 @@ UNITS=(
     "deepseek-cursor-boot-prepare.service"
     "deepseek-cursor-pending-watcher.path"
     "deepseek-cursor-pending-watcher.service"
+    "deepseek-cursor-resume-recover.service"
 )
 
 log "Removing systemd unit files from $SYSTEMD_USER_DIR..."
@@ -93,6 +96,7 @@ for bin_path in \
     "$HOME/.local/bin/update-cursor-deepseek-url" \
     "$HOME/.local/bin/deepseek-cursor-boot-prepare" \
     "$HOME/.local/bin/deepseek-cursor-pending-watcher" \
+    "$HOME/.local/bin/deepseek-cursor-resume-recover" \
     "$HOME/.local/bin/cursor-deepseek"
 do
     if [[ -f "$bin_path" ]]; then
@@ -138,6 +142,19 @@ shopt -u nullglob
 
 if command -v update-desktop-database &>/dev/null && [[ -d "$APPLICATIONS_DIR" ]]; then
     update-desktop-database "$APPLICATIONS_DIR" 2>/dev/null || true
+fi
+
+# ── Remove systemd-sleep hook ───────────────────────────────────────
+echo ""
+SYSTEM_SLEEP_HOOK="/etc/systemd/system-sleep/deepseek-cursor-resume"
+if [[ -f "$SYSTEM_SLEEP_HOOK" ]]; then
+    if sudo rm -f "$SYSTEM_SLEEP_HOOK"; then
+        log "Removed systemd-sleep hook: $SYSTEM_SLEEP_HOOK"
+    else
+        warn "Failed to remove systemd-sleep hook: $SYSTEM_SLEEP_HOOK"
+    fi
+else
+    log "Not found (already removed): $SYSTEM_SLEEP_HOOK"
 fi
 
 # ── Reload systemd ──────────────────────────────────────────────────

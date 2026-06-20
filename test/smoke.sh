@@ -39,7 +39,8 @@ for script in \
     "$REPO_DIR/bootstrap.sh" \
     "$REPO_DIR/bin/update-cursor-deepseek-url.sh" \
     "$REPO_DIR/bin/deepseek-cursor-boot-prepare.sh" \
-    "$REPO_DIR/bin/deepseek-cursor-pending-watcher.sh"
+    "$REPO_DIR/bin/deepseek-cursor-pending-watcher.sh" \
+    "$REPO_DIR/bin/deepseek-cursor-resume-recover.sh"
 do
     name="$(basename "$script")"
     assert "bash -n $name" bash -n "$script"
@@ -147,6 +148,45 @@ assert "Fix B: uninstall.sh stops pending-watcher.path" \
 
 assert "Fix B: uninstall.sh removes pending-watcher binary" \
     grep -q 'deepseek-cursor-pending-watcher' "$REPO_DIR/uninstall.sh"
+
+# Resume recovery after suspend
+RESUME_SCRIPT="$REPO_DIR/bin/deepseek-cursor-resume-recover.sh"
+RESUME_SERVICE="$REPO_DIR/systemd/deepseek-cursor-resume-recover.service"
+RESUME_SLEEP_HOOK="$REPO_DIR/systemd-sleep/deepseek-cursor-resume"
+
+assert "Resume: deepseek-cursor-resume-recover.sh exists" test -f "$RESUME_SCRIPT"
+assert "Resume: deepseek-cursor-resume-recover.service exists" test -f "$RESUME_SERVICE"
+assert "Resume: systemd-sleep hook template exists" test -f "$RESUME_SLEEP_HOOK"
+
+assert "Resume: service contains SuccessExitStatus=75" \
+    grep -q 'SuccessExitStatus=75' "$RESUME_SERVICE"
+
+assert "Resume: script uses flock for mutual exclusion" \
+    grep -q 'flock' "$RESUME_SCRIPT"
+
+assert "Resume: script restarts cloudflared-deepseek-quick.service" \
+    grep -q 'restart cloudflared-deepseek-quick.service' "$RESUME_SCRIPT"
+
+assert "Resume: script starts deepseek-cursor-boot-prepare.service" \
+    grep -q 'start deepseek-cursor-boot-prepare.service' "$RESUME_SCRIPT"
+
+assert "Resume: install.sh installs resume-recover binary" \
+    grep -q 'deepseek-cursor-resume-recover.sh' "$REPO_DIR/install.sh"
+
+assert "Resume: install.sh installs system-sleep hook" \
+    grep -q 'system-sleep/deepseek-cursor-resume' "$REPO_DIR/install.sh"
+
+assert "Resume: install.sh uses sudo for system-sleep hook" \
+    sh -c "grep -q 'sudo tee' '$REPO_DIR/install.sh' && grep -q 'system-sleep/deepseek-cursor-resume' '$REPO_DIR/install.sh'"
+
+assert "Resume: uninstall.sh removes system-sleep hook" \
+    grep -q 'system-sleep/deepseek-cursor-resume' "$REPO_DIR/uninstall.sh"
+
+assert "Resume: sleep hook starts resume-recover on post" \
+    grep -q 'deepseek-cursor-resume-recover.service' "$RESUME_SLEEP_HOOK"
+
+assert "Resume: sleep hook exits 0 on pre" \
+    sh -c "grep -A2 'pre)' '$RESUME_SLEEP_HOOK' | grep -q 'exit 0'"
 
 # LICENSE exists
 assert "LICENSE file exists" test -f "$REPO_DIR/LICENSE"

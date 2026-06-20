@@ -1,0 +1,11 @@
+[Unit]
+Description=Recover DeepSeek Cursor Quick Tunnel after system resume
+Documentation=https://github.com/cheapjourney/deepseek-cursor-setup
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/deepseek-cursor-resume-recover
+SuccessExitStatus=75
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deepseek-cursor-resume-recover

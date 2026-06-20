@@ -102,12 +102,14 @@ cp "$SCRIPT_DIR/systemd/update-cursor-deepseek-url.timer" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/deepseek-cursor-boot-prepare.service" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/deepseek-cursor-pending-watcher.service" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/deepseek-cursor-pending-watcher.path" "$SYSTEMD_DIR/"
+cp "$SCRIPT_DIR/systemd/deepseek-cursor-resume-recover.service" "$SYSTEMD_DIR/"
 
 # ── Install helper scripts ────────────────────────────────────────────
 for script in \
     "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" \
     "$SCRIPT_DIR/bin/deepseek-cursor-boot-prepare.sh" \
     "$SCRIPT_DIR/bin/deepseek-cursor-pending-watcher.sh" \
+    "$SCRIPT_DIR/bin/deepseek-cursor-resume-recover.sh" \
     "$SETUP_DIR/install.sh" \
     "$SETUP_DIR/bootstrap.sh" \
     "$SETUP_DIR/uninstall.sh"
@@ -126,12 +128,15 @@ systemctl --user reset-failed update-cursor-deepseek-url.service 2>/dev/null || 
 UPDATE_BIN="$HOME/.local/bin/update-cursor-deepseek-url"
 BOOT_PREPARE_BIN="$HOME/.local/bin/deepseek-cursor-boot-prepare"
 WATCHER_BIN="$HOME/.local/bin/deepseek-cursor-pending-watcher"
+RESUME_RECOVER_BIN="$HOME/.local/bin/deepseek-cursor-resume-recover"
 install -m 0755 "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" "$UPDATE_BIN"
 install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-boot-prepare.sh" "$BOOT_PREPARE_BIN"
 install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-pending-watcher.sh" "$WATCHER_BIN"
+install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-resume-recover.sh" "$RESUME_RECOVER_BIN"
 log "Installed: $UPDATE_BIN"
 log "Installed: $BOOT_PREPARE_BIN"
 log "Installed: $WATCHER_BIN"
+log "Installed: $RESUME_RECOVER_BIN"
 
 # Remove legacy launcher if present from older installs.
 rm -f "$HOME/.local/bin/cursor-deepseek"
@@ -146,6 +151,18 @@ systemctl --user enable deepseek-cursor-boot-prepare.service
 systemctl --user enable --now deepseek-cursor-pending-watcher.path
 systemctl --user start deepseek-cursor-proxy.service
 systemctl --user start cloudflared-deepseek-quick.service
+
+log "Installing systemd-sleep resume hook..."
+INSTALL_USER="$(id -un)"
+INSTALL_UID="$(id -u)"
+SYSTEM_SLEEP_HOOK="/etc/systemd/system-sleep/deepseek-cursor-resume"
+sed \
+    -e "s/@DEEPSEEK_INSTALL_USER@/${INSTALL_USER}/g" \
+    -e "s/@DEEPSEEK_INSTALL_UID@/${INSTALL_UID}/g" \
+    "$SCRIPT_DIR/systemd-sleep/deepseek-cursor-resume" \
+    | sudo tee "$SYSTEM_SLEEP_HOOK" >/dev/null
+sudo chmod 755 "$SYSTEM_SLEEP_HOOK"
+log "Installed systemd-sleep hook: $SYSTEM_SLEEP_HOOK (user=${INSTALL_USER}, uid=${INSTALL_UID})"
 
 log "Services installed and enabled"
 
@@ -164,6 +181,11 @@ systemctl --user is-active deepseek-cursor-proxy.service && echo "  ✅ deepseek
 systemctl --user is-active cloudflared-deepseek-quick.service && echo "  ✅ cloudflared tunnel (HTTP/2)" || echo "  ❌ cloudflared"
 systemctl --user is-active update-cursor-deepseek-url.timer && echo "  ✅ cursor URL updater timer" || echo "  ❌ cursor URL updater"
 systemctl --user is-active deepseek-cursor-pending-watcher.path && echo "  ✅ pending URL watcher" || echo "  ❌ pending URL watcher"
+if [[ -x /etc/systemd/system-sleep/deepseek-cursor-resume ]]; then
+    echo "  ✅ resume recovery hook (/etc/systemd/system-sleep/deepseek-cursor-resume)"
+else
+    echo "  ❌ resume recovery hook"
+fi
 echo ""
 echo "Boot preparation was triggered in the background. It may take up to a"
 echo "few minutes for Cloudflare Quick Tunnel DNS to become ready."

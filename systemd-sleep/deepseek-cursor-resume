@@ -1,0 +1,36 @@
+#!/bin/sh
+# deepseek-cursor-resume — systemd-sleep hook for DeepSeek Cursor Quick Tunnel recovery
+# Installed to /etc/systemd/system-sleep/deepseek-cursor-resume by install.sh
+
+DEEPSEEK_INSTALL_USER="@DEEPSEEK_INSTALL_USER@"
+DEEPSEEK_INSTALL_UID="@DEEPSEEK_INSTALL_UID@"
+
+case "$1" in
+    pre)
+        exit 0
+        ;;
+    post)
+        RUNTIME_DIR="/run/user/${DEEPSEEK_INSTALL_UID}"
+        BUS_ADDRESS="unix:path=${RUNTIME_DIR}/bus"
+
+        if [ ! -S "${RUNTIME_DIR}/bus" ]; then
+            exit 0
+        fi
+
+        if command -v runuser >/dev/null 2>&1; then
+            runuser -u "${DEEPSEEK_INSTALL_USER}" -- env \
+                XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+                DBUS_SESSION_BUS_ADDRESS="${BUS_ADDRESS}" \
+                systemctl --user start --no-block deepseek-cursor-resume-recover.service \
+                >/dev/null 2>&1 || true
+        else
+            su - "${DEEPSEEK_INSTALL_USER}" -c \
+                "export XDG_RUNTIME_DIR=${RUNTIME_DIR}; export DBUS_SESSION_BUS_ADDRESS=${BUS_ADDRESS}; systemctl --user start --no-block deepseek-cursor-resume-recover.service" \
+                >/dev/null 2>&1 || true
+        fi
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac
