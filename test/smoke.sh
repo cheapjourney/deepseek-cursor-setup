@@ -127,12 +127,19 @@ assert "Fix B: pending-watcher script has 8h timeout" \
 assert "Fix B: pending-watcher script polls cursor_is_running" \
     grep -q 'cursor_is_running' "$WATCHER_SCRIPT"
 
-# Fix B: install.sh deploys watcher units
-assert "Fix B: install.sh copies pending-watcher.path" \
-    grep -q 'deepseek-cursor-pending-watcher.path' "$REPO_DIR/install.sh"
+# Fix B: install.sh deploys watcher units with enable --now
+assert "Fix B: install.sh uses enable --now for pending-watcher.path" \
+    grep -q 'enable --now.*deepseek-cursor-pending-watcher.path' "$REPO_DIR/install.sh"
 
 assert "Fix B: install.sh installs pending-watcher binary" \
     grep -q 'deepseek-cursor-pending-watcher.sh' "$REPO_DIR/install.sh"
+
+# ensure timer is also enabled --now (atomic enable+start)
+assert "install.sh uses enable --now for update-cursor-deepseek-url.timer" \
+    grep -q 'enable --now.*update-cursor-deepseek-url.timer' "$REPO_DIR/install.sh"
+
+assert "install.sh does NOT have separate 'start update-cursor-deepseek-url.timer' (replaced by --now)" \
+    sh -c "! grep -q 'start update-cursor-deepseek-url.timer' '$REPO_DIR/install.sh'"
 
 # Fix B: uninstall.sh removes watcher units
 assert "Fix B: uninstall.sh stops pending-watcher.path" \

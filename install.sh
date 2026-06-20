@@ -141,17 +141,13 @@ rm -f "$HOME/.config/autostart/cursor-deepseek.desktop"
 systemctl --user daemon-reload
 systemctl --user enable deepseek-cursor-proxy.service
 systemctl --user enable cloudflared-deepseek-quick.service
-systemctl --user enable update-cursor-deepseek-url.timer
+systemctl --user enable --now update-cursor-deepseek-url.timer
 systemctl --user enable deepseek-cursor-boot-prepare.service
-systemctl --user enable deepseek-cursor-pending-watcher.path
+systemctl --user enable --now deepseek-cursor-pending-watcher.path
 systemctl --user start deepseek-cursor-proxy.service
 systemctl --user start cloudflared-deepseek-quick.service
-systemctl --user start update-cursor-deepseek-url.timer
 
 log "Services installed and enabled"
-
-log "Starting pending-watcher path unit..."
-systemctl --user start deepseek-cursor-pending-watcher.path || true
 
 log "Triggering boot preparation in the background..."
 systemctl --user reset-failed deepseek-cursor-boot-prepare.service 2>/dev/null || true
