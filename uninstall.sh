@@ -43,6 +43,8 @@ stop_service "deepseek-cursor-proxy.service"
 stop_service "cloudflared-deepseek-quick.service"
 stop_service "update-cursor-deepseek-url.timer"
 stop_service "update-cursor-deepseek-url.service"
+stop_service "deepseek-cursor-pending-watcher.path"
+stop_service "deepseek-cursor-pending-watcher.service"
 
 # ── Disable services ────────────────────────────────────────────────
 echo ""
@@ -52,6 +54,8 @@ disable_service "deepseek-cursor-proxy.service"
 disable_service "cloudflared-deepseek-quick.service"
 disable_service "update-cursor-deepseek-url.timer"
 disable_service "update-cursor-deepseek-url.service"
+disable_service "deepseek-cursor-pending-watcher.path"
+disable_service "deepseek-cursor-pending-watcher.service"
 
 # ── Remove systemd unit files ───────────────────────────────────────
 echo ""
@@ -62,6 +66,8 @@ UNITS=(
     "update-cursor-deepseek-url.service"
     "update-cursor-deepseek-url.timer"
     "deepseek-cursor-boot-prepare.service"
+    "deepseek-cursor-pending-watcher.path"
+    "deepseek-cursor-pending-watcher.service"
 )
 
 log "Removing systemd unit files from $SYSTEMD_USER_DIR..."
@@ -86,6 +92,7 @@ echo ""
 for bin_path in \
     "$HOME/.local/bin/update-cursor-deepseek-url" \
     "$HOME/.local/bin/deepseek-cursor-boot-prepare" \
+    "$HOME/.local/bin/deepseek-cursor-pending-watcher" \
     "$HOME/.local/bin/cursor-deepseek"
 do
     if [[ -f "$bin_path" ]]; then

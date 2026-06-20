@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply pending DeepSeek Cursor URL update as soon as Cursor exits
+Documentation=https://github.com/cheapjourney/deepseek-cursor-setup
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/deepseek-cursor-pending-watcher
+SuccessExitStatus=75
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deepseek-cursor-pending-watcher

@@ -38,7 +38,8 @@ for script in \
     "$REPO_DIR/uninstall.sh" \
     "$REPO_DIR/bootstrap.sh" \
     "$REPO_DIR/bin/update-cursor-deepseek-url.sh" \
-    "$REPO_DIR/bin/deepseek-cursor-boot-prepare.sh"
+    "$REPO_DIR/bin/deepseek-cursor-boot-prepare.sh" \
+    "$REPO_DIR/bin/deepseek-cursor-pending-watcher.sh"
 do
     name="$(basename "$script")"
     assert "bash -n $name" bash -n "$script"
@@ -94,6 +95,51 @@ assert "proxy service references deepseek-cursor-proxy" \
 # install.sh checks dependencies
 assert "install.sh checks for required commands" \
     sh -c "grep -q 'for cmd in' '$REPO_DIR/install.sh' && grep -q 'missing' '$REPO_DIR/install.sh'"
+
+# Fix A: "already up to date" path must check cursor_is_running before clearing pending
+UPDATER_SCRIPT="$REPO_DIR/bin/update-cursor-deepseek-url.sh"
+assert "Fix A: 'already up to date' path checks cursor_is_running before clearing pending" \
+    sh -c "grep -A12 'OLD_BASE_URL.*==.*NEW_BASE_URL' '$UPDATER_SCRIPT' | grep -q 'cursor_is_running'"
+
+assert "Fix A: 'already up to date' path exits with EXIT_TEMPFAIL when Cursor is running" \
+    sh -c "grep -A12 'OLD_BASE_URL.*==.*NEW_BASE_URL' '$UPDATER_SCRIPT' | grep -q 'EXIT_TEMPFAIL'"
+
+# Fix B: pending-watcher systemd units exist
+WATCHER_SERVICE="$REPO_DIR/systemd/deepseek-cursor-pending-watcher.service"
+WATCHER_PATH="$REPO_DIR/systemd/deepseek-cursor-pending-watcher.path"
+assert "Fix B: deepseek-cursor-pending-watcher.service exists" test -f "$WATCHER_SERVICE"
+assert "Fix B: deepseek-cursor-pending-watcher.path exists" test -f "$WATCHER_PATH"
+
+assert "Fix B: pending-watcher.service contains SuccessExitStatus=75" \
+    grep -q 'SuccessExitStatus=75' "$WATCHER_SERVICE"
+
+assert "Fix B: pending-watcher.path watches pending-base-url.txt" \
+    grep -q 'pending-base-url.txt' "$WATCHER_PATH"
+
+# Fix B: watcher script has flock lock protection
+WATCHER_SCRIPT="$REPO_DIR/bin/deepseek-cursor-pending-watcher.sh"
+assert "Fix B: pending-watcher script uses flock for mutual exclusion" \
+    grep -q 'flock' "$WATCHER_SCRIPT"
+
+assert "Fix B: pending-watcher script has 8h timeout" \
+    grep -q 'MAX_WAIT_SEC=28800' "$WATCHER_SCRIPT"
+
+assert "Fix B: pending-watcher script polls cursor_is_running" \
+    grep -q 'cursor_is_running' "$WATCHER_SCRIPT"
+
+# Fix B: install.sh deploys watcher units
+assert "Fix B: install.sh copies pending-watcher.path" \
+    grep -q 'deepseek-cursor-pending-watcher.path' "$REPO_DIR/install.sh"
+
+assert "Fix B: install.sh installs pending-watcher binary" \
+    grep -q 'deepseek-cursor-pending-watcher.sh' "$REPO_DIR/install.sh"
+
+# Fix B: uninstall.sh removes watcher units
+assert "Fix B: uninstall.sh stops pending-watcher.path" \
+    grep -q 'deepseek-cursor-pending-watcher.path' "$REPO_DIR/uninstall.sh"
+
+assert "Fix B: uninstall.sh removes pending-watcher binary" \
+    grep -q 'deepseek-cursor-pending-watcher' "$REPO_DIR/uninstall.sh"
 
 # LICENSE exists
 assert "LICENSE file exists" test -f "$REPO_DIR/LICENSE"

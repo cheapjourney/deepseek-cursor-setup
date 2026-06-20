@@ -100,11 +100,14 @@ cp "$SCRIPT_DIR/systemd/cloudflared-deepseek-quick.service" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/update-cursor-deepseek-url.service" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/update-cursor-deepseek-url.timer" "$SYSTEMD_DIR/"
 cp "$SCRIPT_DIR/systemd/deepseek-cursor-boot-prepare.service" "$SYSTEMD_DIR/"
+cp "$SCRIPT_DIR/systemd/deepseek-cursor-pending-watcher.service" "$SYSTEMD_DIR/"
+cp "$SCRIPT_DIR/systemd/deepseek-cursor-pending-watcher.path" "$SYSTEMD_DIR/"
 
 # ── Install helper scripts ────────────────────────────────────────────
 for script in \
     "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" \
     "$SCRIPT_DIR/bin/deepseek-cursor-boot-prepare.sh" \
+    "$SCRIPT_DIR/bin/deepseek-cursor-pending-watcher.sh" \
     "$SETUP_DIR/install.sh" \
     "$SETUP_DIR/bootstrap.sh" \
     "$SETUP_DIR/uninstall.sh"
@@ -122,10 +125,13 @@ systemctl --user reset-failed update-cursor-deepseek-url.service 2>/dev/null || 
 
 UPDATE_BIN="$HOME/.local/bin/update-cursor-deepseek-url"
 BOOT_PREPARE_BIN="$HOME/.local/bin/deepseek-cursor-boot-prepare"
+WATCHER_BIN="$HOME/.local/bin/deepseek-cursor-pending-watcher"
 install -m 0755 "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" "$UPDATE_BIN"
 install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-boot-prepare.sh" "$BOOT_PREPARE_BIN"
+install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-pending-watcher.sh" "$WATCHER_BIN"
 log "Installed: $UPDATE_BIN"
 log "Installed: $BOOT_PREPARE_BIN"
+log "Installed: $WATCHER_BIN"
 
 # Remove legacy launcher if present from older installs.
 rm -f "$HOME/.local/bin/cursor-deepseek"
@@ -137,11 +143,15 @@ systemctl --user enable deepseek-cursor-proxy.service
 systemctl --user enable cloudflared-deepseek-quick.service
 systemctl --user enable update-cursor-deepseek-url.timer
 systemctl --user enable deepseek-cursor-boot-prepare.service
+systemctl --user enable deepseek-cursor-pending-watcher.path
 systemctl --user start deepseek-cursor-proxy.service
 systemctl --user start cloudflared-deepseek-quick.service
 systemctl --user start update-cursor-deepseek-url.timer
 
 log "Services installed and enabled"
+
+log "Starting pending-watcher path unit..."
+systemctl --user start deepseek-cursor-pending-watcher.path || true
 
 log "Triggering boot preparation in the background..."
 systemctl --user reset-failed deepseek-cursor-boot-prepare.service 2>/dev/null || true
@@ -157,6 +167,7 @@ echo "Services running:"
 systemctl --user is-active deepseek-cursor-proxy.service && echo "  ✅ deepseek-cursor-proxy (port 9000)" || echo "  ❌ deepseek-cursor-proxy"
 systemctl --user is-active cloudflared-deepseek-quick.service && echo "  ✅ cloudflared tunnel (HTTP/2)" || echo "  ❌ cloudflared"
 systemctl --user is-active update-cursor-deepseek-url.timer && echo "  ✅ cursor URL updater timer" || echo "  ❌ cursor URL updater"
+systemctl --user is-active deepseek-cursor-pending-watcher.path && echo "  ✅ pending URL watcher" || echo "  ❌ pending URL watcher"
 echo ""
 echo "Boot preparation was triggered in the background. It may take up to a"
 echo "few minutes for Cloudflare Quick Tunnel DNS to become ready."

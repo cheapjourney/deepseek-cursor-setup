@@ -203,6 +203,14 @@ log_info "New openAIBaseUrl:      $NEW_BASE_URL"
 
 if [[ "$OLD_BASE_URL" == "$NEW_BASE_URL" ]]; then
     log_info "openAIBaseUrl is already up to date. No change needed."
+    if cursor_is_running; then
+        if [[ "$DRY_RUN" == true ]]; then
+            log_dry "Cursor is running; would keep pending URL and exit with code ${EXIT_TEMPFAIL}."
+        else
+            log_warn "DB appears up to date, but Cursor is running; keeping pending until restart/exit."
+        fi
+        exit "$EXIT_TEMPFAIL"
+    fi
     if [[ "$DRY_RUN" != true ]]; then
         save_current_base_url "$NEW_BASE_URL"
         clear_pending_base_url
