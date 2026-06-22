@@ -1,0 +1,10 @@
+[Unit]
+Description=Rebuild DeepSeek Cursor tunnel after each boot
+
+[Timer]
+OnBootSec=45s
+Persistent=true
+Unit=deepseek-cursor-boot-prepare.service
+
+[Install]
+WantedBy=timers.target

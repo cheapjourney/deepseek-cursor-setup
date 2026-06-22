@@ -2,16 +2,11 @@
 Description=Cloudflare Quick Tunnel for DeepSeek Cursor Proxy
 After=network-online.target deepseek-cursor-proxy.service
 Wants=network-online.target deepseek-cursor-proxy.service
+# Started by deepseek-cursor-boot-prepare.service, not directly at login.
 
 [Service]
 Type=simple
 ExecStartPre=/usr/bin/mkdir -p %h/.cache/deepseek-cursor-proxy
 ExecStartPre=/usr/bin/rm -f %h/.cache/deepseek-cursor-proxy/cloudflared.log
-ExecStartPre=/usr/bin/rm -f %h/.cache/deepseek-cursor-proxy/current-base-url.txt
-ExecStartPre=/usr/bin/rm -f %h/.cache/deepseek-cursor-proxy/pending-base-url.txt
 ExecStart=%h/.local/bin/cloudflared tunnel --protocol http2 --url http://127.0.0.1:9000 --logfile %h/.cache/deepseek-cursor-proxy/cloudflared.log
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
+Restart=no

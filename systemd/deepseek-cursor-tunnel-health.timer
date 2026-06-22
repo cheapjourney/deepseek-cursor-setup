@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically verify DeepSeek Cursor tunnel health
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=5min
+Persistent=true
+Unit=deepseek-cursor-tunnel-health.service
+
+[Install]
+WantedBy=timers.target

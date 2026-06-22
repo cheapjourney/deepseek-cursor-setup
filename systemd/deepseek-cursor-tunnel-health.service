@@ -1,0 +1,13 @@
+[Unit]
+Description=Check DeepSeek Cursor tunnel health and rebuild if needed
+After=network-online.target deepseek-cursor-proxy.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/deepseek-cursor-tunnel-health
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deepseek-cursor-tunnel-health
+
+[Install]
+WantedBy=default.target

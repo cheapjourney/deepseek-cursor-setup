@@ -1,8 +1,9 @@
 [Unit]
 Description=Prepare DeepSeek Cursor Quick Tunnel and patch Cursor URL at login
 Documentation=https://github.com/cheapjourney/deepseek-cursor-setup
-After=default.target network-online.target deepseek-cursor-proxy.service
-Wants=deepseek-cursor-proxy.service cloudflared-deepseek-quick.service
+After=network-online.target deepseek-cursor-proxy.service
+Wants=network-online.target deepseek-cursor-proxy.service
+Before=update-cursor-deepseek-url.service
 
 [Service]
 SuccessExitStatus=75

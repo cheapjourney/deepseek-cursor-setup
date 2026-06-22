@@ -396,8 +396,30 @@ print_diagnostics() {
     echo "stale: $(cat "$STALE_FILE" 2>/dev/null || echo 'none')"
 }
 
+invalidate_stale_state() {
+    log_info "Clearing stale tunnel state before rebuild..."
+
+    systemctl --user stop cloudflared-deepseek-quick.service 2>/dev/null || true
+    systemctl --user reset-failed cloudflared-deepseek-quick.service 2>/dev/null || true
+
+    if [[ -f "$CURRENT_FILE" ]]; then
+        local current_url=""
+        current_url="$(tr -d '\r\n' < "$CURRENT_FILE")"
+        if [[ -n "$current_url" ]]; then
+            printf '%s\n' "$current_url" > "$STALE_FILE"
+            log_info "Moved old current-base-url to stale: $current_url"
+        fi
+        rm -f "$CURRENT_FILE"
+    fi
+
+    rm -f "$PENDING_FILE"
+    rm -f "$CLOUDFLARED_LOG"
+}
+
 main() {
-    log_info "Preparing DeepSeek Cursor Quick Tunnel at login..."
+    log_info "Preparing DeepSeek Cursor Quick Tunnel (full rebuild)..."
+
+    invalidate_stale_state
 
     log_info "Stopping URL updater timer/service while preparing..."
     systemctl --user stop update-cursor-deepseek-url.timer || true
@@ -425,7 +447,11 @@ main() {
     fi
 
     log_info "Running Cursor URL updater..."
-    systemctl --user start update-cursor-deepseek-url.service || true
+    if [[ -x "${HOME}/.local/bin/update-cursor-deepseek-url" ]]; then
+        "${HOME}/.local/bin/update-cursor-deepseek-url" || true
+    else
+        systemctl --user start update-cursor-deepseek-url.service || true
+    fi
 
     local updater_result=0
     wait_for_updater_result || updater_result=$?
