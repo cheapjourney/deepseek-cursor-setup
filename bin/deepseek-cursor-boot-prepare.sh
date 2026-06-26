@@ -36,7 +36,12 @@ log_warn()  { echo "[WARN]  $*" >&2; }
 log_error() { echo "[ERROR] $*" >&2; }
 
 cleanup() {
-    systemctl --user restart update-cursor-deepseek-url.timer >/dev/null 2>&1 || true
+    if [[ -x "${HOME}/.local/bin/deepseek-cursor-rearm-url-timer" ]]; then
+        "${HOME}/.local/bin/deepseek-cursor-rearm-url-timer" >/dev/null 2>&1 || true
+    else
+        systemctl --user restart update-cursor-deepseek-url.timer >/dev/null 2>&1 || true
+        systemctl --user start update-cursor-deepseek-url.service >/dev/null 2>&1 || true
+    fi
 }
 
 host_from_url() {
@@ -133,7 +138,34 @@ current_url_works() {
 }
 
 latest_tunnel_url() {
-    grep -oE 'https://[-a-z0-9]+\.trycloudflare\.com' "$CLOUDFLARED_LOG" 2>/dev/null | tail -1 || true
+    grep -oE 'https://[-a-z0-9]+\.trycloudflare\.com' "$CLOUDFLARED_LOG" 2>/dev/null | tail -1 | sed 's|/$||' || true
+}
+
+tunnel_url_is_live() {
+    local url="$1"
+    [[ -n "$url" ]] || return 1
+    curl -fsS --max-time 15 "${url}/v1/models" >/dev/null 2>&1
+}
+
+existing_tunnel_is_healthy() {
+    systemctl --user is-active deepseek-cursor-proxy.service >/dev/null 2>&1 || return 1
+    curl -fsS --max-time 10 http://127.0.0.1:9000/v1/models >/dev/null 2>&1 || return 1
+    systemctl --user is-active cloudflared-deepseek-quick.service >/dev/null 2>&1 || return 1
+    [[ -f "$CLOUDFLARED_LOG" ]] || return 1
+    grep -q 'Registered tunnel connection' "$CLOUDFLARED_LOG" 2>/dev/null || return 1
+
+    local url=""
+    url="$(latest_tunnel_url)"
+    tunnel_url_is_live "$url"
+}
+
+run_url_updater() {
+    log_info "Running Cursor URL updater..."
+    if [[ -x "${HOME}/.local/bin/update-cursor-deepseek-url" ]]; then
+        "${HOME}/.local/bin/update-cursor-deepseek-url" || true
+    else
+        systemctl --user start update-cursor-deepseek-url.service || true
+    fi
 }
 
 wait_for_fresh_cloudflared_log() {
@@ -417,9 +449,7 @@ invalidate_stale_state() {
 }
 
 main() {
-    log_info "Preparing DeepSeek Cursor Quick Tunnel (full rebuild)..."
-
-    invalidate_stale_state
+    log_info "Preparing DeepSeek Cursor Quick Tunnel..."
 
     log_info "Stopping URL updater timer/service while preparing..."
     systemctl --user stop update-cursor-deepseek-url.timer || true
@@ -429,6 +459,28 @@ main() {
 
     log_info "Starting deepseek-cursor-proxy.service..."
     systemctl --user start deepseek-cursor-proxy.service
+
+    if existing_tunnel_is_healthy; then
+        LAST_TUNNEL_URL="$(latest_tunnel_url)"
+        LAST_TUNNEL_HOST="$(host_from_url "$LAST_TUNNEL_URL")"
+        log_info "Existing tunnel is healthy; skipping cloudflared restart: $LAST_TUNNEL_URL"
+        run_url_updater
+        local updater_result=0
+        wait_for_updater_result || updater_result=$?
+        if [[ $updater_result -ne 0 ]]; then
+            if [[ $updater_result -eq "$EXIT_TEMPFAIL" ]]; then
+                log_warn "Boot preparation paused: pending URL waiting for Cursor to close."
+                exit "$EXIT_TEMPFAIL"
+            fi
+            print_diagnostics
+            exit 1
+        fi
+        log_info "Boot preparation complete (existing tunnel reused)."
+        exit 0
+    fi
+
+    log_info "Tunnel unhealthy or missing; performing full rebuild..."
+    invalidate_stale_state
 
     local tunnel_result=0
     try_tunnel_attempts || tunnel_result=$?
@@ -446,12 +498,7 @@ main() {
         exit 1
     fi
 
-    log_info "Running Cursor URL updater..."
-    if [[ -x "${HOME}/.local/bin/update-cursor-deepseek-url" ]]; then
-        "${HOME}/.local/bin/update-cursor-deepseek-url" || true
-    else
-        systemctl --user start update-cursor-deepseek-url.service || true
-    fi
+    run_url_updater
 
     local updater_result=0
     wait_for_updater_result || updater_result=$?

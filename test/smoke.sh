@@ -38,6 +38,7 @@ for script in \
     "$REPO_DIR/uninstall.sh" \
     "$REPO_DIR/bootstrap.sh" \
     "$REPO_DIR/bin/update-cursor-deepseek-url.sh" \
+    "$REPO_DIR/bin/deepseek-cursor-rearm-url-timer.sh" \
     "$REPO_DIR/bin/deepseek-cursor-boot-prepare.sh" \
     "$REPO_DIR/bin/deepseek-cursor-pending-watcher.sh" \
     "$REPO_DIR/bin/deepseek-cursor-resume-recover.sh"
@@ -135,12 +136,24 @@ assert "Fix B: install.sh uses enable --now for pending-watcher.path" \
 assert "Fix B: install.sh installs pending-watcher binary" \
     grep -q 'deepseek-cursor-pending-watcher.sh' "$REPO_DIR/install.sh"
 
-# ensure timer is also enabled --now (atomic enable+start)
-assert "install.sh uses enable --now for update-cursor-deepseek-url.timer" \
-    grep -q 'enable --now.*update-cursor-deepseek-url.timer' "$REPO_DIR/install.sh"
+# ensure timer is enabled and re-armed on install (not only enable --now)
+assert "install.sh enables update-cursor-deepseek-url.timer" \
+    grep -q 'enable update-cursor-deepseek-url.timer' "$REPO_DIR/install.sh"
 
-assert "install.sh does NOT have separate 'start update-cursor-deepseek-url.timer' (replaced by --now)" \
-    sh -c "! grep -q 'start update-cursor-deepseek-url.timer' '$REPO_DIR/install.sh'"
+assert "install.sh re-arms URL updater timer via deepseek-cursor-rearm-url-timer" \
+    grep -q 'deepseek-cursor-rearm-url-timer' "$REPO_DIR/install.sh"
+
+assert "update-cursor-deepseek-url.timer has OnCalendar=minutely fallback" \
+    grep -q 'OnCalendar=minutely' "$REPO_DIR/systemd/update-cursor-deepseek-url.timer"
+
+assert "deepseek-cursor-rearm-url-timer.sh exists" \
+    test -f "$REPO_DIR/bin/deepseek-cursor-rearm-url-timer.sh"
+
+assert "boot-prepare cleanup uses rearm-url-timer helper" \
+    grep -q 'deepseek-cursor-rearm-url-timer' "$REPO_DIR/bin/deepseek-cursor-boot-prepare.sh"
+
+assert "pending-watcher re-arms URL updater timer after patch" \
+    grep -q 'rearm_url_timer' "$WATCHER_SCRIPT"
 
 # Fix B: uninstall.sh removes watcher units
 assert "Fix B: uninstall.sh stops pending-watcher.path" \

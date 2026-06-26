@@ -110,6 +110,7 @@ cp "$SCRIPT_DIR/systemd/deepseek-cursor-resume-recover.service" "$SYSTEMD_DIR/"
 # ── Install helper scripts ────────────────────────────────────────────
 for script in \
     "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" \
+    "$SCRIPT_DIR/bin/deepseek-cursor-rearm-url-timer.sh" \
     "$SCRIPT_DIR/bin/deepseek-cursor-boot-prepare.sh" \
     "$SCRIPT_DIR/bin/deepseek-cursor-tunnel-health.sh" \
     "$SCRIPT_DIR/bin/deepseek-cursor-pending-watcher.sh" \
@@ -130,16 +131,19 @@ systemctl --user stop update-cursor-deepseek-url.service 2>/dev/null || true
 systemctl --user reset-failed update-cursor-deepseek-url.service 2>/dev/null || true
 
 UPDATE_BIN="$HOME/.local/bin/update-cursor-deepseek-url"
+REARM_TIMER_BIN="$HOME/.local/bin/deepseek-cursor-rearm-url-timer"
 BOOT_PREPARE_BIN="$HOME/.local/bin/deepseek-cursor-boot-prepare"
 TUNNEL_HEALTH_BIN="$HOME/.local/bin/deepseek-cursor-tunnel-health"
 WATCHER_BIN="$HOME/.local/bin/deepseek-cursor-pending-watcher"
 RESUME_RECOVER_BIN="$HOME/.local/bin/deepseek-cursor-resume-recover"
 install -m 0755 "$SCRIPT_DIR/bin/update-cursor-deepseek-url.sh" "$UPDATE_BIN"
+install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-rearm-url-timer.sh" "$REARM_TIMER_BIN"
 install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-boot-prepare.sh" "$BOOT_PREPARE_BIN"
 install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-tunnel-health.sh" "$TUNNEL_HEALTH_BIN"
 install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-pending-watcher.sh" "$WATCHER_BIN"
 install -m 0755 "$SCRIPT_DIR/bin/deepseek-cursor-resume-recover.sh" "$RESUME_RECOVER_BIN"
 log "Installed: $UPDATE_BIN"
+log "Installed: $REARM_TIMER_BIN"
 log "Installed: $BOOT_PREPARE_BIN"
 log "Installed: $TUNNEL_HEALTH_BIN"
 log "Installed: $WATCHER_BIN"
@@ -153,7 +157,8 @@ rm -f "$HOME/.config/autostart/cursor-deepseek.desktop"
 systemctl --user daemon-reload
 systemctl --user enable deepseek-cursor-proxy.service
 systemctl --user disable cloudflared-deepseek-quick.service 2>/dev/null || true
-systemctl --user enable --now update-cursor-deepseek-url.timer
+systemctl --user enable update-cursor-deepseek-url.timer
+"$REARM_TIMER_BIN"
 systemctl --user enable deepseek-cursor-boot-prepare.service
 systemctl --user enable --now deepseek-cursor-boot-prepare.timer
 systemctl --user enable --now deepseek-cursor-tunnel-health.timer

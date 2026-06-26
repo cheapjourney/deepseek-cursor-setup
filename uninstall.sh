@@ -94,6 +94,7 @@ fi
 echo ""
 for bin_path in \
     "$HOME/.local/bin/update-cursor-deepseek-url" \
+    "$HOME/.local/bin/deepseek-cursor-rearm-url-timer" \
     "$HOME/.local/bin/deepseek-cursor-boot-prepare" \
     "$HOME/.local/bin/deepseek-cursor-pending-watcher" \
     "$HOME/.local/bin/deepseek-cursor-resume-recover" \

@@ -4,6 +4,7 @@ Description=Retry Cursor DeepSeek URL update after Cloudflare Quick Tunnel start
 [Timer]
 OnBootSec=30s
 OnUnitInactiveSec=60s
+OnCalendar=minutely
 AccuracySec=5s
 Unit=update-cursor-deepseek-url.service
 Persistent=true

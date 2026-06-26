@@ -8,6 +8,7 @@ CACHE_DIR="${HOME}/.cache/deepseek-cursor-proxy"
 PENDING_FILE="${CACHE_DIR}/pending-base-url.txt"
 LOCK_FILE="${CACHE_DIR}/pending-watcher.lock"
 UPDATER_BIN="${HOME}/.local/bin/update-cursor-deepseek-url"
+REARM_TIMER_BIN="${HOME}/.local/bin/deepseek-cursor-rearm-url-timer"
 MAX_WAIT_SEC=28800   # 8 hours
 POLL_INTERVAL=5
 EXIT_TEMPFAIL=75
@@ -18,6 +19,24 @@ log_error() { echo "[ERROR] $*" >&2; }
 
 cursor_is_running() {
     ps -eo pid=,args= | awk '/\/usr\/share\/cursor\/cursor([[:space:]]|$)/ { found=1 } END { exit found ? 0 : 1 }'
+}
+
+run_updater() {
+    if [[ ! -x "$UPDATER_BIN" ]]; then
+        log_error "Updater binary not found: $UPDATER_BIN"
+        return 1
+    fi
+
+    "$UPDATER_BIN"
+}
+
+rearm_url_timer() {
+    if [[ -x "$REARM_TIMER_BIN" ]]; then
+        "$REARM_TIMER_BIN" >/dev/null 2>&1 || true
+    else
+        systemctl --user restart update-cursor-deepseek-url.timer >/dev/null 2>&1 || true
+        systemctl --user start update-cursor-deepseek-url.service >/dev/null 2>&1 || true
+    fi
 }
 
 ensure_lock() {
@@ -50,12 +69,8 @@ main() {
 
     if ! cursor_is_running; then
         log_info "Cursor is not running. Running updater immediately..."
-        if [[ -x "$UPDATER_BIN" ]]; then
-            "$UPDATER_BIN"
-        else
-            log_error "Updater binary not found: $UPDATER_BIN"
-            exit 1
-        fi
+        run_updater
+        rearm_url_timer
         exit 0
     fi
 
@@ -68,12 +83,8 @@ main() {
 
         if ! cursor_is_running; then
             log_info "Cursor exited after ~${elapsed}s. Running updater..."
-            if [[ -x "$UPDATER_BIN" ]]; then
-                "$UPDATER_BIN"
-            else
-                log_error "Updater binary not found: $UPDATER_BIN"
-                exit 1
-            fi
+            run_updater
+            rearm_url_timer
             exit 0
         fi
     done

@@ -117,7 +117,7 @@ journalctl --user -u deepseek-cursor-boot-prepare -b -n 120 --no-pager
 
 1. `cloudflared-deepseek-quick.service` starts on boot and creates a Quick Tunnel over **HTTP/2** (`--protocol http2`), logging its URL to `~/.cache/deepseek-cursor-proxy/cloudflared.log`.
 2. `deepseek-cursor-boot-prepare.service` runs once at login: rebuilds the tunnel, waits for `/models`, and triggers the updater.
-3. `update-cursor-deepseek-url.timer` fires 30 seconds after boot and every 60 seconds after each updater run completes.
+3. `update-cursor-deepseek-url.timer` fires 30 seconds after boot, every minute (`OnCalendar=minutely`), and 60 seconds after each updater run completes.
 4. Each time the updater runs, `update-cursor-deepseek-url.sh`:
     - Scans the cloudflared log for the **newest reachable** `trycloudflare.com` URL (validates both `/healthz` and `/v1/models` are reachable).
     - Normalizes it to `https://<host>.trycloudflare.com/v1`.
